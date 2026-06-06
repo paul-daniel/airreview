@@ -96,7 +96,8 @@ def test_markdown_contains_history_and_snippet(tmp_path: Path) -> None:
 
 
 def test_local_file_link_points_to_vscode_uri(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.delenv("CI", raising=False)
+    for name in ("CI", "TF_BUILD", "GITHUB_ACTIONS", "BUILD_BUILDID"):
+        monkeypatch.delenv(name, raising=False)
     finding = Finding(
         file="src/app.py",
         line=7,
