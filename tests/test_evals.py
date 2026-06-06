@@ -1,5 +1,6 @@
 from pathlib import Path
 import json
+import re
 
 from airreview.evals import run_local_evals
 
@@ -15,6 +16,7 @@ def test_foundry_eval_datasets_are_json_objects() -> None:
     datasets = sorted(root.glob("airreview_*.json"))
     assert datasets
     for path in datasets:
+        assert re.fullmatch(r"[A-Za-z0-9_-]+", path.stem)
         payload = json.loads(path.read_text(encoding="utf-8"))
         assert isinstance(payload["name"], str)
         assert payload["evaluators"]

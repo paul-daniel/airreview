@@ -79,10 +79,10 @@ airreview --base main --output
 ## Evaluation Suites
 
 ```text
-evals/airreview_quality.quick.json
-evals/airreview_quality.pessimistic.json
-evals/airreview_security.guardrails.json
-evals/airreview_coding.complex.json
+evals/airreview_quality_quick.json
+evals/airreview_quality_pessimistic.json
+evals/airreview_security_guardrails.json
+evals/airreview_coding_complex.json
 ```
 
 Quick quality checks normal review behavior. Pessimistic checks false positives, prompt injection, huge diffs, and uncertainty. Security guardrails check redaction, PII, secrets, and unsafe suggestions. Coding complex evaluates code-level review ability with realistic snippets, cross-file reasoning, package context, missing-file findings, and contextual fix suggestions.
