@@ -91,6 +91,8 @@ Quick quality checks normal review behavior. Pessimistic checks false positives,
 
 Foundry evals are currently an observability signal in this demo workflow: they run with a timeout and `continue-on-error` because the public action is preview. The PR review quality gate remains the blocking check.
 
+The Microsoft `ai-agent-evals@v3-beta` action currently creates evaluations with the hardcoded name `Agent Evaluation`. For the demo, the workflow checks out the action source, patches that display name at runtime, and creates evaluations named like `AirReview agent evaluation v123 quality_smoke`.
+
 ## Current Reality
 
 Reliable today:
