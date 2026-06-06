@@ -53,7 +53,7 @@ AZURE_SUBSCRIPTION_ID=<subscription-id>
 
 `AIRREVIEW_AGENT_MODE=foundry_agents` is optional. If omitted, AirReview calls the Foundry model endpoint directly.
 
-`FOUNDRY_AGENT_IDS` is only required for the Foundry evaluation workflow. Put the five agent names or ids after `airreview foundry sync-agents` has created them.
+`FOUNDRY_AGENT_IDS` is only required for the Foundry evaluation workflow. Leave it empty for the first run. After `airreview foundry sync-agents` has created the agents, copy the agent ids from Azure AI Foundry and set this variable.
 
 ## 4. Repository Secrets
 
@@ -134,11 +134,28 @@ unit tests
 local deterministic evals
 ```
 
-On `main` and manual dispatch it also runs:
+On `main` and manual dispatch it also runs a Foundry readiness check.
+
+If these variables exist:
+
+```text
+FOUNDRY_PROJECT_ENDPOINT
+FOUNDRY_MODEL
+AZURE_CLIENT_ID
+AZURE_TENANT_ID
+AZURE_SUBSCRIPTION_ID
+```
+
+it runs:
 
 ```text
 Azure OIDC login
 airreview foundry sync-agents
+```
+
+If `FOUNDRY_AGENT_IDS` is also set, it then runs:
+
+```text
 microsoft/ai-agent-evals for quick, pessimistic, and security JSONL suites
 ```
 

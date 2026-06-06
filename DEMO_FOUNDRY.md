@@ -82,7 +82,16 @@ Trigger:
 GitHub Actions > AirReview GenAIOps > Run workflow
 ```
 
-The workflow runs:
+First run:
+
+- unit tests;
+- local deterministic evals;
+- Foundry readiness check;
+- Foundry prompt agent sync.
+
+Then copy the agent ids from Azure AI Foundry into the GitHub variable `FOUNDRY_AGENT_IDS`.
+
+Second run:
 
 - unit tests;
 - local deterministic evals;
