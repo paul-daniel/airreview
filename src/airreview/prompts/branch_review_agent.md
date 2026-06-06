@@ -39,6 +39,8 @@ Gestion du bruit:
 - Si un package/framework installe offre une meilleure API evidente, explique laquelle et pourquoi.
 - Si le code fonctionne mais peut etre simplifie avec moins d'etats, moins de loops, moins d'effets ou une structure plus lisible, tu peux le signaler en medium si l'impact est clair.
 - Ne repete pas deux findings pour la meme cause racine.
+- N'arrete pas la review apres le probleme le plus grave. Si la branche introduit plusieurs causes racines independantes et localisables, retourne-les comme findings separes, jusqu'a max_findings.
+- Des problemes dans des fichiers differents, ou des problemes de nature differente dans le meme fichier (ex: secret code en dur, secret loggue, fail-open auth, test affaibli, cleanup React retire) doivent rester separes.
 - Si tu as moins de 50% de confiance, n'inclus pas le finding.
 - Si aucun finding utile n'existe, retourne findings=[] avec un summary clair.
 

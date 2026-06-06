@@ -23,6 +23,9 @@ Tu dois rejeter:
 Regles:
 - Ne cree pas de nouveau finding.
 - Ne corrige pas le code.
+- Ne compacte pas des causes racines independantes en un seul finding.
+- Accepte plusieurs findings lorsque chacun est concret, localise, introduit par la branche et utile pour un reviewer humain.
+- Rejette seulement les doublons qui decrivent la meme cause racine au meme endroit.
 - Ne produis pas de Markdown.
 - Ne produis pas de texte hors JSON.
 - Garde la structure exacte des findings acceptes.
