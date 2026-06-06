@@ -56,6 +56,30 @@ airreview foundry sync-agents
 
 When `AIRREVIEW_AGENT_MODE=foundry_agents`, the CLI calls these Foundry prompt agents instead of calling the model deployment directly.
 
+## Context7 MCP tool
+
+AirReview declares the Context7 remote MCP tool in:
+
+```text
+foundry/tools.yaml
+```
+
+The planning, branch review, and fix suggestion agents reference this tool in their agent manifests. The sync command attaches it when creating the next Foundry agent version:
+
+```bash
+export AIRREVIEW_CONTEXT7_CONNECTION_ID="/subscriptions/.../projects/airreview/connections/context7"
+airreview foundry sync-agents
+```
+
+Use Context7 for documentation-sensitive decisions only:
+
+- API deprecations;
+- package/framework version behavior;
+- recommended APIs or migration guidance;
+- code suggestions that must match the installed dependency version.
+
+Do not use it for obvious diff-local findings such as hardcoded secrets, removed tests, missing cleanup, or fail-open authorization.
+
 ## Foundry IQ target
 
 `foundry/knowledge.yaml` describes the intended enterprise knowledge layer. The PR diff remains runtime context, while stable repository knowledge can move to Foundry IQ:

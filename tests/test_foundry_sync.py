@@ -1,6 +1,14 @@
 from pathlib import Path
 
-from airreview.foundry_sync import agent_refs, load_agent_manifests, load_model_manifests, sync_agents, sync_models
+from airreview.foundry_sync import (
+    agent_refs,
+    build_foundry_tools,
+    load_agent_manifests,
+    load_model_manifests,
+    load_tool_manifests,
+    sync_agents,
+    sync_models,
+)
 
 
 def test_load_foundry_agent_manifests() -> None:
@@ -21,6 +29,30 @@ def test_load_foundry_agent_manifests() -> None:
         "airreview-critic-mini",
         "airreview-fix-codex",
     }
+    tools_by_agent = {manifest.name: manifest.tools for manifest in manifests}
+    assert tools_by_agent["airreview-planning-agent"] == ("context7_docs",)
+    assert tools_by_agent["airreview-branch-review-agent"] == ("context7_docs",)
+    assert tools_by_agent["airreview-fix-suggestion-agent"] == ("context7_docs",)
+    assert tools_by_agent["airreview-codebase-context-agent"] == ()
+    assert tools_by_agent["airreview-finding-critic-agent"] == ()
+
+
+def test_load_foundry_tool_manifests(monkeypatch) -> None:
+    repo = Path(__file__).resolve().parents[1]
+    connection_id = "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.CognitiveServices/accounts/res/projects/proj/connections/context7"
+    monkeypatch.setenv("AIRREVIEW_CONTEXT7_CONNECTION_ID", connection_id)
+
+    manifests = load_tool_manifests(repo)
+
+    assert len(manifests) == 1
+    manifest = manifests[0]
+    assert manifest.key == "context7_docs"
+    assert manifest.type == "mcp"
+    assert manifest.server_label == "context7"
+    assert manifest.server_url == "https://mcp.context7.com/mcp"
+    assert manifest.project_connection_id == connection_id
+    assert manifest.require_approval == "never"
+    assert manifest.allowed_tools == ("resolve-library-id", "query-docs")
 
 
 def test_load_foundry_model_manifests() -> None:
@@ -44,6 +76,7 @@ def test_sync_agents_dry_run() -> None:
 
     assert len(rows) == 5
     assert all(row["dry_run"] for row in rows)
+    assert any(row["name"] == "airreview-branch-review-agent" and row["tools"] == ["context7_docs"] for row in rows)
 
 
 def test_sync_models_dry_run() -> None:
@@ -61,6 +94,29 @@ def test_agent_refs_use_name_and_version() -> None:
     ]
 
     assert agent_refs(rows) == ["airreview-planning-agent:1", "airreview-branch-review-agent:2"]
+
+
+def test_build_foundry_mcp_tool(monkeypatch) -> None:
+    repo = Path(__file__).resolve().parents[1]
+    connection_id = "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.CognitiveServices/accounts/res/projects/proj/connections/context7"
+    monkeypatch.setenv("AIRREVIEW_CONTEXT7_CONNECTION_ID", connection_id)
+    agent = next(manifest for manifest in load_agent_manifests(repo) if manifest.name == "airreview-branch-review-agent")
+    tools_by_key = {manifest.key: manifest for manifest in load_tool_manifests(repo)}
+
+    class FakeMCPTool:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+    tools = build_foundry_tools(FakeMCPTool, agent, tools_by_key)
+
+    assert len(tools) == 1
+    assert tools[0].kwargs == {
+        "server_label": "context7",
+        "server_url": "https://mcp.context7.com/mcp",
+        "require_approval": "never",
+        "project_connection_id": connection_id,
+        "allowed_tools": ["resolve-library-id", "query-docs"],
+    }
 
 
 def test_sync_models_resolves_auto_model_version(monkeypatch) -> None:

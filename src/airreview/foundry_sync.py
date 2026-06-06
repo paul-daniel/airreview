@@ -15,6 +15,7 @@ class AgentManifest:
     prompt_file: Path
     model: str
     description: str
+    tools: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -26,6 +27,17 @@ class ModelDeploymentManifest:
     model_format: str
     sku_name: str
     sku_capacity: int
+
+
+@dataclass(frozen=True)
+class ToolManifest:
+    key: str
+    type: str
+    server_label: str
+    server_url: str
+    require_approval: str
+    project_connection_id: str
+    allowed_tools: tuple[str, ...]
 
 
 def sync_models(repo: Path, dry_run: bool = False, prune: bool = False) -> list[dict[str, Any]]:
@@ -96,6 +108,7 @@ def sync_agents(repo: Path, dry_run: bool = False) -> list[dict[str, Any]]:
                 "name": manifest.name,
                 "model": manifest.model,
                 "prompt_file": str(manifest.prompt_file.relative_to(repo)),
+                "tools": list(manifest.tools),
                 "dry_run": True,
             }
             for manifest in manifests
@@ -105,19 +118,26 @@ def sync_agents(repo: Path, dry_run: bool = False) -> list[dict[str, Any]]:
         raise RuntimeError("Set FOUNDRY_PROJECT_ENDPOINT or AZURE_AI_PROJECT_ENDPOINT before syncing Foundry agents.")
     try:
         from azure.ai.projects import AIProjectClient
+        from azure.ai.projects.models import MCPTool
         from azure.ai.projects.models import PromptAgentDefinition
         from azure.identity import DefaultAzureCredential
     except ImportError as exc:
         raise RuntimeError("Install optional Foundry dependencies with `pip install 'airreview[foundry]'`.") from exc
 
+    tool_manifests = {manifest.key: manifest for manifest in load_tool_manifests(repo, optional=True)}
     results: list[dict[str, Any]] = []
     with DefaultAzureCredential() as credential:
         with AIProjectClient(endpoint=endpoint, credential=credential) as project_client:
             for manifest in manifests:
                 instructions = manifest.prompt_file.read_text(encoding="utf-8")
+                tools = build_foundry_tools(MCPTool, manifest, tool_manifests)
                 agent = project_client.agents.create_version(
                     agent_name=manifest.name,
-                    definition=PromptAgentDefinition(model=manifest.model, instructions=instructions),
+                    definition=PromptAgentDefinition(
+                        model=manifest.model,
+                        instructions=instructions,
+                        tools=tools or None,
+                    ),
                 )
                 results.append(
                     {
@@ -125,6 +145,7 @@ def sync_agents(repo: Path, dry_run: bool = False) -> list[dict[str, Any]]:
                         "id": getattr(agent, "id", ""),
                         "version": getattr(agent, "version", ""),
                         "model": manifest.model,
+                        "tools": list(manifest.tools),
                     }
                 )
     return results
@@ -163,17 +184,84 @@ def load_agent_manifests(repo: Path) -> list[AgentManifest]:
             model = model_manifest.deployment_name
         if model.startswith("${") and model.endswith("}"):
             model = os.getenv(model[2:-1], "")
+        raw_tools = raw.get("tools", [])
+        if raw_tools is None:
+            raw_tools = []
+        if not isinstance(raw_tools, list):
+            raise RuntimeError(f"`tools` in {path} must be a list.")
         manifests.append(
             AgentManifest(
                 name=str(raw["name"]),
                 prompt_file=prompt,
                 model=model or first_env("FOUNDRY_MODEL", "AZURE_AI_MODEL_DEPLOYMENT_NAME", default="gpt-5-mini"),
                 description=str(raw.get("description", "")),
+                tools=tuple(str(tool) for tool in raw_tools),
             )
         )
     if not manifests:
         raise RuntimeError("No Foundry agent manifests found. Expected foundry/agents/*.yaml.")
     return manifests
+
+
+def load_tool_manifests(repo: Path, optional: bool = False) -> list[ToolManifest]:
+    path = repo / "foundry" / "tools.yaml"
+    if not path.exists():
+        if optional:
+            return []
+        raise RuntimeError("No Foundry tool manifest found. Expected foundry/tools.yaml.")
+    raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    entries = raw.get("tools", {})
+    if not isinstance(entries, dict):
+        raise RuntimeError("foundry/tools.yaml must contain a `tools` map.")
+    manifests: list[ToolManifest] = []
+    for key, value in entries.items():
+        if not isinstance(value, dict):
+            raise RuntimeError(f"Tool manifest `{key}` must be an object.")
+        allowed_tools = value.get("allowed_tools") or []
+        if not isinstance(allowed_tools, list):
+            raise RuntimeError(f"`allowed_tools` in tool manifest `{key}` must be a list.")
+        manifests.append(
+            ToolManifest(
+                key=str(key),
+                type=str(value.get("type") or "mcp"),
+                server_label=str(value.get("server_label") or key),
+                server_url=expand_env(str(value.get("server_url") or "")),
+                require_approval=str(value.get("require_approval") or "never"),
+                project_connection_id=expand_env(str(value.get("project_connection_id") or "")),
+                allowed_tools=tuple(str(tool) for tool in allowed_tools),
+            )
+        )
+    for manifest in manifests:
+        if manifest.type != "mcp":
+            raise RuntimeError(f"Unsupported Foundry tool type `{manifest.type}` for `{manifest.key}`.")
+        if not manifest.server_url:
+            raise RuntimeError(f"Tool manifest `{manifest.key}` needs server_url.")
+    return manifests
+
+
+def build_foundry_tools(mcp_tool_cls: Any, agent: AgentManifest, tools_by_key: dict[str, ToolManifest]) -> list[Any]:
+    foundry_tools: list[Any] = []
+    for key in agent.tools:
+        manifest = tools_by_key.get(key)
+        if not manifest:
+            raise RuntimeError(f"Agent `{agent.name}` references unknown Foundry tool `{key}`.")
+        kwargs: dict[str, Any] = {
+            "server_label": manifest.server_label,
+            "server_url": manifest.server_url,
+            "require_approval": manifest.require_approval,
+        }
+        if manifest.project_connection_id:
+            kwargs["project_connection_id"] = manifest.project_connection_id
+        if manifest.allowed_tools:
+            kwargs["allowed_tools"] = list(manifest.allowed_tools)
+        try:
+            foundry_tools.append(mcp_tool_cls(**kwargs))
+        except TypeError as exc:
+            raise RuntimeError(
+                f"The installed azure-ai-projects SDK does not support the MCP tool fields used by `{key}`. "
+                "Upgrade with `pip install --upgrade 'airreview[foundry]'`."
+            ) from exc
+    return foundry_tools
 
 
 def load_model_manifests(repo: Path, optional: bool = False) -> list[ModelDeploymentManifest]:
@@ -343,3 +431,10 @@ def first_env(*names: str, default: str = "") -> str:
         if value:
             return value
     return default
+
+
+def expand_env(value: str) -> str:
+    value = value.strip()
+    if value.startswith("${") and value.endswith("}"):
+        return os.getenv(value[2:-1], "")
+    return value

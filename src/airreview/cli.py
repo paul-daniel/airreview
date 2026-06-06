@@ -187,6 +187,7 @@ def cmd_foundry(repo: Path, args: argparse.Namespace) -> int:
         table = Table(title="Foundry Agent Sync", show_header=True, header_style="bold cyan")
         table.add_column("Agent")
         table.add_column("Model")
+        table.add_column("Tools")
         table.add_column("Version")
         table.add_column("Eval ref")
         table.add_column("Mode")
@@ -197,6 +198,7 @@ def cmd_foundry(repo: Path, args: argparse.Namespace) -> int:
             table.add_row(
                 str(row.get("name")),
                 str(row.get("model", "-")),
+                ", ".join(row.get("tools", [])) or "-",
                 str(row.get("version", "-")),
                 ref,
                 "dry-run" if row.get("dry_run") else "synced",

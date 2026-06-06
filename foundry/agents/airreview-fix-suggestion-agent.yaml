@@ -2,3 +2,5 @@ name: airreview-fix-suggestion-agent
 description: Produces concrete, contextual fix suggestions for accepted findings.
 model_key: fix_suggestion
 prompt_file: src/airreview/prompts/fix_suggestion_agent.md
+tools:
+  - context7_docs

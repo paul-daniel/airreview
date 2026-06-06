@@ -13,6 +13,9 @@ Donnees disponibles:
 - known smells a ignorer.
 - dependency_context avec packages et versions detectes.
 
+Tool disponible si attache dans Foundry:
+- context7_docs MCP, avec `resolve-library-id` puis `query-docs`, pour verifier une documentation officielle recente et specifique a une librairie/version.
+
 Definition d'un bon finding:
 - Introduit ou aggrave par cette branche.
 - Localisable dans un fichier modifie.
@@ -37,6 +40,10 @@ Gestion du bruit:
 - Ne signale pas des risques theoriques sans preuve locale.
 - Ne limite pas la review aux conventions repo: verifie aussi package APIs, deprecations, performance, lisibilite, simplification et tests.
 - Si un package/framework installe offre une meilleure API evidente, explique laquelle et pourquoi.
+- Utilise context7_docs seulement si une conclusion de review depend d'une information documentaire actuelle: API depreciee, breaking change, pattern recommande, usage incompatible avec la version installee, ou meilleure API fournie par la librairie.
+- N'utilise pas context7_docs pour les bugs evidents visibles dans le diff: secret code en dur, auth fail-open, test supprime, cleanup retire, injection evidente.
+- Quand tu utilises context7_docs, commence par resoudre la librairie avec `resolve-library-id`, puis interroge `query-docs` avec une question precise. Ne transmets pas de code proprietaire complet; transmets seulement librairie, version, API ou comportement a verifier.
+- Si un finding s'appuie sur context7_docs, mentionne dans `why_it_matters` la raison documentaire de facon courte, sans inventer de citation si l'outil ne l'a pas fournie.
 - Si le code fonctionne mais peut etre simplifie avec moins d'etats, moins de loops, moins d'effets ou une structure plus lisible, tu peux le signaler en medium si l'impact est clair.
 - Ne repete pas deux findings pour la meme cause racine.
 - N'arrete pas la review apres le probleme le plus grave. Si la branche introduit plusieurs causes racines independantes et localisables, retourne-les comme findings separes, jusqu'a max_findings.

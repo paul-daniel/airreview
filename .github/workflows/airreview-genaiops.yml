@@ -55,12 +55,13 @@ jobs:
           FOUNDRY_PROJECT_ENDPOINT: ${{ vars.FOUNDRY_PROJECT_ENDPOINT }}
           FOUNDRY_RESOURCE_GROUP: ${{ vars.FOUNDRY_RESOURCE_GROUP }}
           FOUNDRY_RESOURCE_NAME: ${{ vars.FOUNDRY_RESOURCE_NAME }}
+          AIRREVIEW_CONTEXT7_CONNECTION_ID: ${{ vars.AIRREVIEW_CONTEXT7_CONNECTION_ID }}
           AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
           AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
           AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
         run: |
           missing_sync=()
-          for name in FOUNDRY_PROJECT_ENDPOINT FOUNDRY_RESOURCE_GROUP FOUNDRY_RESOURCE_NAME AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID; do
+          for name in FOUNDRY_PROJECT_ENDPOINT FOUNDRY_RESOURCE_GROUP FOUNDRY_RESOURCE_NAME AIRREVIEW_CONTEXT7_CONNECTION_ID AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID; do
             if [ -z "${!name}" ]; then
               missing_sync+=("$name")
             fi
@@ -109,6 +110,7 @@ jobs:
       - name: Sync Foundry prompt agents
         env:
           FOUNDRY_PROJECT_ENDPOINT: ${{ vars.FOUNDRY_PROJECT_ENDPOINT }}
+          AIRREVIEW_CONTEXT7_CONNECTION_ID: ${{ vars.AIRREVIEW_CONTEXT7_CONNECTION_ID }}
         run: airreview foundry sync-agents --output-json foundry-agent-sync.json
 
       - name: Export synced agent refs

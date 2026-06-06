@@ -1,0 +1,11 @@
+tools:
+  context7_docs:
+    type: mcp
+    description: Version-aware documentation lookup through the Context7 remote MCP server.
+    server_label: context7
+    server_url: https://mcp.context7.com/mcp
+    project_connection_id: ${AIRREVIEW_CONTEXT7_CONNECTION_ID}
+    require_approval: never
+    allowed_tools:
+      - resolve-library-id
+      - query-docs
