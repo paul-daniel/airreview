@@ -1,1 +1,0 @@
-{"id":"compat_quality_dataset_notice","query":"Use evals/airreview_quality.quick.jsonl for the full quick quality suite.","expected":"Compatibility placeholder for older workflows.","metadata":{"category":"compat"}}

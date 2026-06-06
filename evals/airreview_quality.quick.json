@@ -1,0 +1,189 @@
+{
+  "name": "airreview_quality-quick",
+  "evaluators": [
+    "builtin.task_adherence",
+    "builtin.fluency"
+  ],
+  "data": [
+    {
+      "query": "Review a PR that adds src/config/runtime.ts with adminDebugToken = \"demo-admin-token-please-rotate\".",
+      "ground_truth": "Flag a high severity hardcoded secret and recommend env/managed secret usage without repeating the token value.",
+      "metadata": {
+        "id": "quick_secret_literal",
+        "category": "security",
+        "severity": "high"
+      }
+    },
+    {
+      "query": "Review a PR that changes canReleaseOrder so every support user can release every order regardless of risk.",
+      "ground_truth": "Flag uncontrolled permission widening as high severity and suggest restoring risk/status checks.",
+      "metadata": {
+        "id": "quick_permission_widening",
+        "category": "security",
+        "severity": "high"
+      }
+    },
+    {
+      "query": "Review a PR that lets support users view billing data previously restricted to admin and finance.",
+      "ground_truth": "Flag authorization regression and ask for explicit product approval or scoped permission.",
+      "metadata": {
+        "id": "quick_billing_visibility_widening",
+        "category": "security",
+        "severity": "high"
+      }
+    },
+    {
+      "query": "Review a React PR that renders order tags with dangerouslySetInnerHTML through renderSupportNoteHtml.",
+      "ground_truth": "Flag XSS risk and suggest escaping/rendering as text or sanitizing with a vetted sanitizer.",
+      "metadata": {
+        "id": "quick_unsafe_html",
+        "category": "security",
+        "severity": "high"
+      }
+    },
+    {
+      "query": "Review a DataTable change that replaces stable row keys with Math.random().",
+      "ground_truth": "Flag unstable keys as maintainability/performance issue causing remounts and state loss.",
+      "metadata": {
+        "id": "quick_unstable_random_keys",
+        "category": "quality",
+        "severity": "medium"
+      }
+    },
+    {
+      "query": "Review a hook change that removes cancellation cleanup from async resource loading.",
+      "ground_truth": "Flag possible state update after unmount/race condition and restore cleanup.",
+      "metadata": {
+        "id": "quick_missing_effect_cleanup",
+        "category": "reliability",
+        "severity": "medium"
+      }
+    },
+    {
+      "query": "Review useDebouncedValue where delayMs is removed from the effect dependency list.",
+      "ground_truth": "Flag stale delay behavior and explain dependency correctness.",
+      "metadata": {
+        "id": "quick_dependency_omission",
+        "category": "quality",
+        "severity": "medium"
+      }
+    },
+    {
+      "query": "Review a billing service that mutates imported invoice fixtures to mark an invoice paid.",
+      "ground_truth": "Flag mutation of shared module data and suggest immutable state/API-backed update.",
+      "metadata": {
+        "id": "quick_imported_fixture_mutation",
+        "category": "maintainability",
+        "severity": "medium"
+      }
+    },
+    {
+      "query": "Review reserveInventoryForOrder that subtracts quantity without bounds checking.",
+      "ground_truth": "Flag possible negative inventory and missing validation.",
+      "metadata": {
+        "id": "quick_inventory_negative_stock",
+        "category": "quality",
+        "severity": "medium"
+      }
+    },
+    {
+      "query": "Review AnalyticsDashboard creating and sorting 20,000 entries during render.",
+      "ground_truth": "Flag expensive render work and suggest memoization or precomputed service data.",
+      "metadata": {
+        "id": "quick_expensive_render",
+        "category": "performance",
+        "severity": "medium"
+      }
+    },
+    {
+      "query": "Review Toolbar where a labelled input is replaced by an unlabeled input with only placeholder text.",
+      "ground_truth": "Flag accessibility regression and restore a label or aria-label.",
+      "metadata": {
+        "id": "quick_accessibility_label_removed",
+        "category": "accessibility",
+        "severity": "medium"
+      }
+    },
+    {
+      "query": "Review AccessPanel and AdminDebugPanel displaying runtimeConfig.adminDebugToken in the UI.",
+      "ground_truth": "Flag secret/debug data exposure and recommend removing from UI/logs.",
+      "metadata": {
+        "id": "quick_debug_token_display",
+        "category": "security",
+        "severity": "high"
+      }
+    },
+    {
+      "query": "Review main.tsx logging localStorage session at boot.",
+      "ground_truth": "Flag potential PII/session leakage in logs and remove or redact.",
+      "metadata": {
+        "id": "quick_console_debug_session",
+        "category": "security",
+        "severity": "medium"
+      }
+    },
+    {
+      "query": "Review a button that loops over overdue orders and calls window.open for each one.",
+      "ground_truth": "Flag poor UX/security risk and suggest single navigable view or explicit user action.",
+      "metadata": {
+        "id": "quick_window_open_loop",
+        "category": "quality",
+        "severity": "low"
+      }
+    },
+    {
+      "query": "Review tests changed to expect support release on high-risk orders after permission widening.",
+      "ground_truth": "Flag test weakening that codifies unsafe behavior instead of catching it.",
+      "metadata": {
+        "id": "quick_weak_test_changed_expectation",
+        "category": "testability",
+        "severity": "medium"
+      }
+    },
+    {
+      "query": "Review customer search that filters by JSON.stringify(customer) on every render.",
+      "ground_truth": "Flag inefficient and imprecise search and suggest targeted fields with memoization.",
+      "metadata": {
+        "id": "quick_json_stringify_search",
+        "category": "performance",
+        "severity": "medium"
+      }
+    },
+    {
+      "query": "Review unsafeParseMoney using replace for currency parsing.",
+      "ground_truth": "Flag locale/currency parsing fragility if used and suggest typed numeric values or robust parser.",
+      "metadata": {
+        "id": "quick_money_parse",
+        "category": "quality",
+        "severity": "low"
+      }
+    },
+    {
+      "query": "Review sortOrdersForExport calling input.sort directly.",
+      "ground_truth": "Flag mutation of caller-owned array and suggest copying before sorting.",
+      "metadata": {
+        "id": "quick_sort_mutates_input",
+        "category": "maintainability",
+        "severity": "medium"
+      }
+    },
+    {
+      "query": "Review sendAuditBeacon that ignores success/failure and sends raw audit JSON.",
+      "ground_truth": "Suggest handling return value or documenting fire-and-forget and validating payload privacy.",
+      "metadata": {
+        "id": "quick_send_beacon_no_result",
+        "category": "observability",
+        "severity": "low"
+      }
+    },
+    {
+      "query": "Review a PR adding new realistic orders/customers/inventory fixtures with typed domain objects.",
+      "ground_truth": "Do not over-report; acknowledge no issue if data matches existing types and conventions.",
+      "metadata": {
+        "id": "quick_good_dataset_addition",
+        "category": "negative-control",
+        "severity": "none"
+      }
+    }
+  ]
+}

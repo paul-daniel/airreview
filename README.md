@@ -215,7 +215,7 @@ AirReview keeps operational assets versionable:
 
 - prompts in `src/airreview/prompts/`;
 - Foundry agent manifests in `foundry/agents/`;
-- evaluation datasets in `evals/*.jsonl`;
+- evaluation datasets in `evals/*.json`;
 - review policy in `.airreview/review_profile.yaml`;
 - run traces in `.airreview/runs/<run-id>/trace.json`;
 - reproducible Markdown output;
