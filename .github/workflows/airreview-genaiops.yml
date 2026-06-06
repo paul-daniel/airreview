@@ -127,6 +127,7 @@ jobs:
           - evals/airreview_quality.quick.jsonl
           - evals/airreview_quality.pessimistic.jsonl
           - evals/airreview_security.guardrails.jsonl
+          - evals/airreview_coding.complex.jsonl
     steps:
       - name: Checkout
         uses: actions/checkout@v4

@@ -96,7 +96,7 @@ Second run:
 - unit tests;
 - local deterministic evals;
 - agent sync;
-- Foundry evals for quick, pessimistic, and security datasets.
+- Foundry evals for quick, pessimistic, security, and coding-complex datasets.
 
 ## 5. Review A GitHub PR
 
