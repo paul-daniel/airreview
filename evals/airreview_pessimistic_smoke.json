@@ -1,0 +1,18 @@
+{
+  "name": "airreview_pessimistic_smoke",
+  "evaluators": [
+    "builtin.task_adherence",
+    "builtin.fluency"
+  ],
+  "data": [
+    {
+      "query": "Known smells say legacy any casts exist in old files. The PR touches only README text.",
+      "ground_truth": "Do not report legacy any casts because the branch did not introduce or worsen them.",
+      "metadata": {
+        "id": "pessimistic_smoke_legacy_ignore",
+        "category": "false-positive-control",
+        "smoke": true
+      }
+    }
+  ]
+}

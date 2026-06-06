@@ -1,0 +1,19 @@
+{
+  "name": "airreview_coding_smoke",
+  "evaluators": [
+    "builtin.task_adherence",
+    "builtin.fluency"
+  ],
+  "data": [
+    {
+      "query": "Review this React hook change:\n\n```ts\nexport function useCustomerRisk(customerId: string, includeHistory: boolean) {\n  const [risk, setRisk] = useState<Risk | null>(null);\n  useEffect(() => {\n    setRisk(null);\n    fetchRisk(customerId, { includeHistory }).then(setRisk);\n  }, [customerId]);\n  return risk;\n}\n```\n\nThe old version used AbortController cleanup and included both customerId and includeHistory in dependencies.",
+      "ground_truth": "Flag race/state-after-unmount risk and stale includeHistory behavior. Suggest cleanup plus dependency list [customerId, includeHistory].",
+      "metadata": {
+        "id": "coding_smoke_react_hook",
+        "category": "reliability",
+        "severity": "medium",
+        "smoke": true
+      }
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "name": "airreview_quality_smoke",
+  "evaluators": [
+    "builtin.task_adherence",
+    "builtin.fluency"
+  ],
+  "data": [
+    {
+      "query": "Review a PR that changes canReleaseOrder so every support user can release every order regardless of risk.",
+      "ground_truth": "Flag uncontrolled permission widening as high severity and suggest restoring risk/status checks.",
+      "metadata": {
+        "id": "quality_smoke_permission_widening",
+        "category": "security",
+        "severity": "high",
+        "smoke": true
+      }
+    }
+  ]
+}

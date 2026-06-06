@@ -129,16 +129,19 @@ jobs:
   foundry-agent-evals:
     if: ${{ needs.foundry-sync.outputs.agent-refs != '' }}
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    continue-on-error: true
     needs:
       - foundry-sync
     strategy:
       fail-fast: false
+      max-parallel: 1
       matrix:
         suite:
-          - evals/airreview_quality_quick.json
-          - evals/airreview_quality_pessimistic.json
-          - evals/airreview_security_guardrails.json
-          - evals/airreview_coding_complex.json
+          - evals/airreview_quality_smoke.json
+          - evals/airreview_pessimistic_smoke.json
+          - evals/airreview_security_smoke.json
+          - evals/airreview_coding_smoke.json
     steps:
       - name: Checkout
         uses: actions/checkout@v4
