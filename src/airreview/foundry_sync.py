@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -14,6 +15,73 @@ class AgentManifest:
     prompt_file: Path
     model: str
     description: str
+
+
+@dataclass(frozen=True)
+class ModelDeploymentManifest:
+    key: str
+    deployment_name: str
+    model_name: str
+    model_version: str
+    model_format: str
+    sku_name: str
+    sku_capacity: int
+
+
+def sync_models(repo: Path, dry_run: bool = False, prune: bool = False) -> list[dict[str, Any]]:
+    manifests = load_model_manifests(repo)
+    resource_group = first_env("FOUNDRY_RESOURCE_GROUP", "AZURE_AI_RESOURCE_GROUP")
+    resource_name = first_env("FOUNDRY_RESOURCE_NAME", "AZURE_AI_RESOURCE_NAME", "FOUNDRY_ACCOUNT_NAME")
+    if dry_run:
+        existing: dict[str, Any] = {}
+    else:
+        if not resource_group or not resource_name:
+            raise RuntimeError(
+                "Set FOUNDRY_RESOURCE_GROUP and FOUNDRY_RESOURCE_NAME before syncing model deployments."
+            )
+        existing = list_model_deployments(resource_group, resource_name)
+    rows: list[dict[str, Any]] = []
+    desired_names = {manifest.deployment_name for manifest in manifests}
+    for manifest in manifests:
+        current = existing.get(manifest.deployment_name)
+        if current:
+            rows.append(
+                {
+                    "key": manifest.key,
+                    "deployment_name": manifest.deployment_name,
+                    "model": manifest.model_name,
+                    "sku": manifest.sku_name,
+                    "capacity": manifest.sku_capacity,
+                    "status": "exists",
+                    "dry_run": dry_run,
+                }
+            )
+            continue
+        if not dry_run:
+            create_model_deployment(resource_group, resource_name, manifest)
+        rows.append(
+            {
+                "key": manifest.key,
+                "deployment_name": manifest.deployment_name,
+                "model": manifest.model_name,
+                "sku": manifest.sku_name,
+                "capacity": manifest.sku_capacity,
+                "status": "would_create" if dry_run else "created",
+                "dry_run": dry_run,
+            }
+        )
+    orphaned = [
+        name
+        for name in sorted(existing)
+        if name.startswith("airreview-") and name not in desired_names
+    ]
+    for name in orphaned:
+        status = "orphaned"
+        if prune and not dry_run:
+            delete_model_deployment(resource_group, resource_name, name)
+            status = "deleted"
+        rows.append({"deployment_name": name, "status": status, "dry_run": dry_run})
+    return rows
 
 
 def sync_agents(repo: Path, dry_run: bool = False) -> list[dict[str, Any]]:
@@ -73,6 +141,7 @@ def agent_refs(rows: list[dict[str, Any]]) -> list[str]:
 
 def load_agent_manifests(repo: Path) -> list[AgentManifest]:
     root = repo / "foundry" / "agents"
+    models_by_key = {manifest.key: manifest for manifest in load_model_manifests(repo, optional=True)}
     if not root.exists():
         raise RuntimeError("No Foundry agent manifests found. Expected foundry/agents/*.yaml.")
     manifests: list[AgentManifest] = []
@@ -82,6 +151,12 @@ def load_agent_manifests(repo: Path) -> list[AgentManifest]:
         if not prompt.exists():
             raise RuntimeError(f"Prompt file not found for {path}: {prompt}")
         model = str(raw.get("model") or "")
+        model_key = str(raw.get("model_key") or "")
+        if model_key:
+            model_manifest = models_by_key.get(model_key)
+            if not model_manifest:
+                raise RuntimeError(f"Unknown model_key `{model_key}` in {path}.")
+            model = model_manifest.deployment_name
         if model.startswith("${") and model.endswith("}"):
             model = os.getenv(model[2:-1], "")
         manifests.append(
@@ -95,6 +170,108 @@ def load_agent_manifests(repo: Path) -> list[AgentManifest]:
     if not manifests:
         raise RuntimeError("No Foundry agent manifests found. Expected foundry/agents/*.yaml.")
     return manifests
+
+
+def load_model_manifests(repo: Path, optional: bool = False) -> list[ModelDeploymentManifest]:
+    path = repo / "foundry" / "models.yaml"
+    if not path.exists():
+        if optional:
+            return []
+        raise RuntimeError("No Foundry model manifest found. Expected foundry/models.yaml.")
+    raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    entries = raw.get("models", {})
+    if not isinstance(entries, dict) or not entries:
+        raise RuntimeError("foundry/models.yaml must contain a non-empty `models` map.")
+    manifests: list[ModelDeploymentManifest] = []
+    for key, value in entries.items():
+        if not isinstance(value, dict):
+            raise RuntimeError(f"Model manifest `{key}` must be an object.")
+        manifests.append(
+            ModelDeploymentManifest(
+                key=str(key),
+                deployment_name=str(value.get("deployment_name") or f"airreview-{key}"),
+                model_name=str(value.get("model") or value.get("model_name") or ""),
+                model_version=str(value.get("model_version") or ""),
+                model_format=str(value.get("model_format") or "OpenAI"),
+                sku_name=str(value.get("sku") or value.get("sku_name") or "GlobalStandard"),
+                sku_capacity=int(value.get("capacity") or value.get("sku_capacity") or 10),
+            )
+        )
+    for manifest in manifests:
+        if not manifest.deployment_name or not manifest.model_name:
+            raise RuntimeError(f"Model manifest `{manifest.key}` needs deployment_name and model.")
+    return manifests
+
+
+def list_model_deployments(resource_group: str, resource_name: str) -> dict[str, Any]:
+    payload = run_az_json(
+        [
+            "cognitiveservices",
+            "account",
+            "deployment",
+            "list",
+            "--resource-group",
+            resource_group,
+            "--name",
+            resource_name,
+        ]
+    )
+    if not isinstance(payload, list):
+        return {}
+    return {str(item.get("name")): item for item in payload if item.get("name")}
+
+
+def create_model_deployment(resource_group: str, resource_name: str, manifest: ModelDeploymentManifest) -> None:
+    args = [
+        "cognitiveservices",
+        "account",
+        "deployment",
+        "create",
+        "--resource-group",
+        resource_group,
+        "--name",
+        resource_name,
+        "--deployment-name",
+        manifest.deployment_name,
+        "--model-name",
+        manifest.model_name,
+        "--model-format",
+        manifest.model_format,
+        "--sku-name",
+        manifest.sku_name,
+        "--sku-capacity",
+        str(manifest.sku_capacity),
+    ]
+    if manifest.model_version:
+        args.extend(["--model-version", manifest.model_version])
+    run_az_json(args)
+
+
+def delete_model_deployment(resource_group: str, resource_name: str, deployment_name: str) -> None:
+    run_az_json(
+        [
+            "cognitiveservices",
+            "account",
+            "deployment",
+            "delete",
+            "--resource-group",
+            resource_group,
+            "--name",
+            resource_name,
+            "--deployment-name",
+            deployment_name,
+            "--yes",
+        ]
+    )
+
+
+def run_az_json(args: list[str]) -> Any:
+    proc = subprocess.run(["az", *args, "-o", "json"], text=True, capture_output=True, check=False)
+    if proc.returncode != 0:
+        raise RuntimeError(proc.stderr.strip() or proc.stdout.strip() or f"az {' '.join(args)} failed")
+    if not proc.stdout.strip():
+        return {}
+    return yaml.safe_load(proc.stdout)
 
 
 def first_env(*names: str, default: str = "") -> str:

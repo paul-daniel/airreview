@@ -26,6 +26,7 @@ DEFAULT_PROFILE = {
     "knowledge": {"provider": "local", "auto_init": True},
     "foundry": {"provider": "azure_ai_inference"},
     "azure_devops": {"post_comments": False, "comment_mode": "single_thread"},
+    "github": {"post_comments": False, "comment_mode": "inline_with_summary", "inline_min_severity": "medium"},
 }
 
 

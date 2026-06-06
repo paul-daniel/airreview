@@ -303,7 +303,11 @@ def suggestion_lines(suggestions: list[Suggestion]) -> list[str]:
 
 
 def _location(finding: Finding) -> str:
-    return f"{finding.file}:{finding.line}" if finding.line else finding.file
+    if not finding.line:
+        return finding.file
+    if finding.end_line and finding.end_line > finding.line:
+        return f"{finding.file}:{finding.line}-{finding.end_line}"
+    return f"{finding.file}:{finding.line}"
 
 
 def _location_key(finding: Finding) -> str:

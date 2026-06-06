@@ -35,7 +35,7 @@ Read and write permissions
 Allow GitHub Actions to create and approve pull requests: optional
 ```
 
-AirReview only needs write permission for one PR comment. GitHub PR comments use the Issues API behind the scenes.
+AirReview needs permission to create PR review comments. It posts one compact summary plus one comment per finding. Findings attached to changed diff lines are posted inline; findings that cannot be attached to a diff line fall back to individual PR conversation comments.
 
 ## 3. Repository Variables
 
@@ -43,14 +43,16 @@ In GitHub repository settings, add these Actions variables:
 
 ```text
 FOUNDRY_PROJECT_ENDPOINT=https://<resource>.services.ai.azure.com/api/projects/<project>
-FOUNDRY_MODEL=<deployment-name>
+FOUNDRY_RESOURCE_GROUP=<resource-group>
+FOUNDRY_RESOURCE_NAME=<ai-services-or-foundry-resource-name>
+FOUNDRY_MODEL=<runtime-fallback-deployment-name>
 AIRREVIEW_AGENT_MODE=foundry_agents
 AZURE_CLIENT_ID=<federated-app-client-id>
 AZURE_TENANT_ID=<tenant-id>
 AZURE_SUBSCRIPTION_ID=<subscription-id>
 ```
 
-`AIRREVIEW_AGENT_MODE=foundry_agents` is optional. If omitted, AirReview calls the Foundry model endpoint directly.
+`FOUNDRY_MODEL` is still useful as a runtime fallback, but AirReview agent deployments are now declared in `foundry/models.yaml` and connected to agents through `foundry/agents/*.yaml`. `AIRREVIEW_AGENT_MODE=foundry_agents` is optional. If omitted, AirReview calls the Foundry model endpoint directly.
 
 Do not set `FOUNDRY_AGENT_IDS`. The workflow now uses the `name:version` refs returned by `airreview foundry sync-agents`, for example `airreview-planning-agent:3`. The UUID shown under Entra agent identity is not accepted by `microsoft/ai-agent-evals`.
 
@@ -106,7 +108,15 @@ GITHUB_REPOSITORY
 GITHUB_EVENT_PATH
 ```
 
-It posts one global PR comment for demo reliability. Inline GitHub comments are intentionally out of scope for this MVP.
+It posts:
+
+```text
+one AirReview summary comment
+one inline GitHub review comment per finding when the finding line is commentable
+one individual fallback PR conversation comment per finding when GitHub cannot attach the line
+```
+
+AirReview removes previous comments containing its internal marker before reposting, so reruns do not stack duplicate comments.
 
 ## 5. Permissions
 
@@ -115,7 +125,7 @@ The workflow needs:
 ```yaml
 permissions:
   contents: read
-  pull-requests: read
+  pull-requests: write
   issues: write
   id-token: write
 ```
@@ -139,7 +149,8 @@ If these variables exist:
 
 ```text
 FOUNDRY_PROJECT_ENDPOINT
-FOUNDRY_MODEL
+FOUNDRY_RESOURCE_GROUP
+FOUNDRY_RESOURCE_NAME
 AZURE_CLIENT_ID
 AZURE_TENANT_ID
 AZURE_SUBSCRIPTION_ID
@@ -149,13 +160,8 @@ it runs:
 
 ```text
 Azure OIDC login
+airreview foundry sync-models
 airreview foundry sync-agents
 ```
 
-After agent sync, it automatically runs:
-
-```text
-microsoft/ai-agent-evals for quick, pessimistic, security, and coding-complex JSON suites
-```
-
-This avoids duplicate PR comments while still proving the GenAIOps loop.
+The current demo keeps the Foundry evaluation job visible but disabled for stability. The eval datasets remain versioned under `evals/` and can be re-enabled later.

@@ -18,7 +18,7 @@ from .azure_devops import post_pr_comment, pr_context
 from .config import ReviewProfile
 from .dependencies import scan_dependency_context
 from .git_tools import BranchContext, collect_branch_context, fetch
-from .github import github_context, post_pr_comment as post_github_pr_comment
+from .github import github_context, post_review_comments as post_github_review_comments
 from .history import compare_findings, load_previous_review, save_review_json
 from .knowledge import KnowledgeBundle, LocalKnowledgeProvider
 from .models import ModelClient
@@ -225,7 +225,15 @@ class AirReviewWorkflow:
             self.tools.call("azure_devops_post_pr_comment", post_pr_comment, markdown, options.dry_run)
         if options.post_github:
             markdown = build_markdown(branch_context, self.profile, knowledge, result, self.trace)
-            self.tools.call("github_post_pr_comment", post_github_pr_comment, markdown, options.dry_run)
+            self.tools.call(
+                "github_post_review_comments",
+                post_github_review_comments,
+                result,
+                result.suggestions,
+                branch_context.diff,
+                markdown,
+                options.dry_run,
+            )
         trace_path = self.trace.write()
         return WorkflowOutput(branch_context, knowledge, result, markdown_path, trace_path, should_fail=should_fail(result, options.fail_on))
 

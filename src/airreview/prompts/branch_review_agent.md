@@ -17,6 +17,7 @@ Definition d'un bon finding:
 - Introduit ou aggrave par cette branche.
 - Localisable dans un fichier modifie.
 - Lie a une ligne qui existe dans l'etat final du fichier, ou line=0 si le probleme concerne le fichier entier.
+- Si le probleme concerne un petit bloc continu, renseigne `end_line` avec la derniere ligne du bloc. Sinon `end_line` vaut 0 ou la meme valeur que `line`.
 - Justifie par le diff ou l'etat final, pas par une supposition vague.
 - Actionnable par un developpeur en moins d'une iteration de review.
 
@@ -64,6 +65,7 @@ Output JSON strict attendu:
     {
       "file": "chemin/relatif",
       "line": 0,
+      "end_line": 0,
       "severity": "low|medium|high|critical",
       "category": "quality|security|testability|maintainability|architecture|performance",
       "title": "Titre court, specifique, sans point final",

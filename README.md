@@ -144,6 +144,15 @@ export FOUNDRY_MODEL="gpt-5-mini" # deployment name
 airreview --output
 ```
 
+For the GenAIOps control plane, AirReview model deployments are declared in `foundry/models.yaml`. Sync missing deployments from the AirReview repository:
+
+```bash
+export FOUNDRY_RESOURCE_GROUP="<resource-group>"
+export FOUNDRY_RESOURCE_NAME="<ai-services-or-foundry-resource-name>"
+airreview foundry sync-models --dry-run
+airreview foundry sync-models
+```
+
 Authentication order:
 
 1. `FOUNDRY_API_KEY` or `AZURE_AI_API_KEY`.
@@ -181,7 +190,7 @@ The MVP posts one global PR thread. Line-by-line comments are intentionally out 
 
 ## GitHub PR review
 
-`.github/workflows/pr-review.yml` reviews every pull request and posts one global GitHub PR comment:
+`.github/workflows/pr-review.yml` reviews every pull request and posts a compact summary plus one comment per finding. AirReview uses inline GitHub review comments when the finding line is present in the PR diff, and falls back to individual PR conversation comments when GitHub cannot attach the line:
 
 ```bash
 airreview airreview-pr-head --base origin/<base> --output --post-github --fail-on medium
@@ -193,9 +202,11 @@ See [GITHUB_SETUP.md](GITHUB_SETUP.md) for permissions, variables, and GitHub OI
 
 AirReview can call either the Foundry model endpoint directly or five prompt agents in Foundry Agent Service.
 
-Sync prompt agents:
+Sync desired-state model deployments, then prompt agents:
 
 ```bash
+airreview foundry sync-models --dry-run
+airreview foundry sync-models
 airreview foundry sync-agents --dry-run
 airreview foundry sync-agents
 ```
@@ -214,13 +225,15 @@ See [GENAIOPS.md](GENAIOPS.md) and [DEMO_FOUNDRY.md](DEMO_FOUNDRY.md).
 AirReview keeps operational assets versionable:
 
 - prompts in `src/airreview/prompts/`;
+- Foundry model desired state in `foundry/models.yaml`;
 - Foundry agent manifests in `foundry/agents/`;
+- Foundry IQ target architecture in `foundry/knowledge.yaml`;
 - evaluation datasets in `evals/*.json`;
 - review policy in `.airreview/review_profile.yaml`;
 - run traces in `.airreview/runs/<run-id>/trace.json`;
 - reproducible Markdown output;
 - Azure DevOps pipeline definition;
-- model configuration via environment variables;
+- environment variables only for Azure/Foundry location and identity;
 - local knowledge that can later move to Foundry IQ or Azure AI Search.
 
 This lets teams compare prompt versions, review profile changes, output quality, and roll back through Git.

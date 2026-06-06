@@ -15,7 +15,7 @@ from .git_tools import detect_base, ensure_git_repo, ref_exists
 from .github import github_context
 from .knowledge import LocalKnowledgeProvider
 from .evals import run_local_evals, write_eval_report
-from .foundry_sync import agent_refs, sync_agents
+from .foundry_sync import agent_refs, sync_agents, sync_models
 from .models import build_model_client
 from .rendering import (
     console,
@@ -69,6 +69,10 @@ def build_parser(raw_args: list[str]) -> argparse.ArgumentParser:
         eval_parser.add_argument("--mock", action="store_true", default=True, help="Use mock model for deterministic evals.")
         foundry_parser = subparsers.add_parser("foundry", help="Foundry GenAIOps commands.")
         foundry_sub = foundry_parser.add_subparsers(dest="foundry_command", required=True)
+        models_parser = foundry_sub.add_parser("sync-models", help="Create missing Foundry model deployments from foundry/models.yaml.")
+        models_parser.add_argument("--dry-run", action="store_true", help="Show model sync plan without calling Azure.")
+        models_parser.add_argument("--prune", action="store_true", help="Delete orphaned airreview-* deployments not declared in foundry/models.yaml.")
+        models_parser.add_argument("--output-json", help="Write raw sync results for automation.")
         sync_parser = foundry_sub.add_parser("sync-agents", help="Create/update Foundry prompt agents from manifests.")
         sync_parser.add_argument("--dry-run", action="store_true", help="Show agent sync plan without calling Foundry.")
         sync_parser.add_argument("--output-json", help="Write raw sync results for automation.")
@@ -87,7 +91,7 @@ def build_parser(raw_args: list[str]) -> argparse.ArgumentParser:
     parser.add_argument("--mock", action="store_true", help="Use deterministic local model output.")
     parser.add_argument("--fetch", action="store_true", help="Fetch remotes before computing branch diff.")
     parser.add_argument("--post-ado", action="store_true", help="Post a global Azure DevOps PR comment.")
-    parser.add_argument("--post-github", action="store_true", help="Post a global GitHub pull request comment.")
+    parser.add_argument("--post-github", action="store_true", help="Post GitHub PR review comments, inline when possible.")
     parser.add_argument("--dry-run", action="store_true", help="Do not post to Azure DevOps; record intent only.")
     parser.add_argument("--fail-on", choices=["low", "medium", "high", "critical"], default=None, help="Exit non-zero when findings at this severity or higher exist.")
     return parser
@@ -209,6 +213,33 @@ def cmd_foundry(repo: Path, args: argparse.Namespace) -> int:
             refs = agent_refs(rows)
             if refs:
                 ok("Foundry eval refs: " + ",".join(refs))
+        return 0
+    if args.foundry_command == "sync-models":
+        rows = sync_models(repo, dry_run=args.dry_run, prune=args.prune)
+        table = Table(title="Foundry Model Sync", show_header=True, header_style="bold cyan")
+        table.add_column("Key")
+        table.add_column("Deployment")
+        table.add_column("Model")
+        table.add_column("SKU")
+        table.add_column("Capacity")
+        table.add_column("Status")
+        for row in rows:
+            table.add_row(
+                str(row.get("key", "-")),
+                str(row.get("deployment_name", "-")),
+                str(row.get("model", "-")),
+                str(row.get("sku", "-")),
+                str(row.get("capacity", "-")),
+                str(row.get("status", "-")),
+            )
+        console.print(table)
+        if args.output_json:
+            target = Path(args.output_json)
+            if not target.is_absolute():
+                target = repo / target
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(json.dumps(rows, indent=2), encoding="utf-8")
+            ok(f"Foundry model sync JSON: {target}")
         return 0
     raise RuntimeError(f"Unsupported Foundry command: {args.foundry_command}")
 

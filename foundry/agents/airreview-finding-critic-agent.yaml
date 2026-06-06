@@ -1,4 +1,4 @@
 name: airreview-finding-critic-agent
 description: Filters noisy or unsupported AirReview findings.
-model: ${FOUNDRY_MODEL}
+model_key: finding_critic
 prompt_file: src/airreview/prompts/finding_critic_agent.md

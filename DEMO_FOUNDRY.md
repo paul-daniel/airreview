@@ -7,9 +7,8 @@ This is the step-by-step runbook for the real demo after the code is pushed to G
 Create or select:
 
 - Azure AI Foundry project;
-- model deployment, for example `gpt-5-mini`;
 - application registration or managed identity for GitHub OIDC;
-- RBAC allowing the identity to use the Foundry project.
+- RBAC allowing the identity to use the Foundry project and create model deployments.
 
 Minimum identity guidance:
 
@@ -25,6 +24,8 @@ Add repository variables:
 
 ```text
 FOUNDRY_PROJECT_ENDPOINT
+FOUNDRY_RESOURCE_GROUP
+FOUNDRY_RESOURCE_NAME
 FOUNDRY_MODEL
 AIRREVIEW_AGENT_MODE=foundry_agents
 AZURE_CLIENT_ID
@@ -40,11 +41,14 @@ GitHub workflow permissions:
 Settings -> Actions -> General -> Workflow permissions -> Read and write
 ```
 
-## 3. Sync Agents
+`FOUNDRY_MODEL` is a runtime fallback. The desired AirReview model deployments live in `foundry/models.yaml`.
+
+## 3. Sync Models And Agents
 
 Local dry run:
 
 ```bash
+airreview foundry sync-models --dry-run
 airreview foundry sync-agents --dry-run
 ```
 
@@ -53,10 +57,21 @@ Real sync:
 ```bash
 pip install ".[foundry]"
 az login
+airreview foundry sync-models
 airreview foundry sync-agents
 ```
 
-In the Foundry portal, confirm the five AirReview agents exist.
+In the Foundry portal, confirm the AirReview model deployments and five AirReview agents exist.
+
+Expected model deployments:
+
+```text
+airreview-planning-mini
+airreview-context-mini
+airreview-review-codex
+airreview-critic-mini
+airreview-fix-codex
+```
 
 Expected agents:
 
@@ -100,7 +115,9 @@ Create a PR in a target repo with AirReview installed or in this repo. The PR wo
 
 - fetches base and head;
 - runs AirReview against the final branch state;
-- posts a global PR comment;
+- posts one summary plus one comment per finding;
+- attaches comments inline when GitHub can map the finding to a changed diff line;
+- falls back to individual PR conversation comments when a finding cannot be attached inline;
 - fails when medium/high/critical findings exist.
 
 For the first smoke test, create a small PR in this repository:
@@ -177,6 +194,7 @@ airreview eval --output airreview-eval-results.json
 Dry-run agent sync:
 
 ```bash
+airreview foundry sync-models --dry-run
 airreview foundry sync-agents --dry-run
 ```
 
@@ -184,6 +202,7 @@ Real agent sync:
 
 ```bash
 az login
+airreview foundry sync-models
 airreview foundry sync-agents
 ```
 
@@ -193,7 +212,7 @@ In Azure:
 
 ```text
 Azure AI Foundry project
-Model deployment
+Model deployments declared in foundry/models.yaml
 Entra app registration or managed identity
 Federated credentials for GitHub
 RBAC access to the Foundry project

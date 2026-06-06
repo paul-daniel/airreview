@@ -28,6 +28,19 @@ The Saturday demo must run without cloud setup. Local mock mode proves the exper
 
 ## Prompt agent manifests
 
+Model desired state lives in:
+
+```text
+foundry/models.yaml
+```
+
+Sync missing AirReview model deployments with:
+
+```bash
+airreview foundry sync-models --dry-run
+airreview foundry sync-models
+```
+
 Versioned manifests live in:
 
 ```text
@@ -42,3 +55,15 @@ airreview foundry sync-agents
 ```
 
 When `AIRREVIEW_AGENT_MODE=foundry_agents`, the CLI calls these Foundry prompt agents instead of calling the model deployment directly.
+
+## Foundry IQ target
+
+`foundry/knowledge.yaml` describes the intended enterprise knowledge layer. The PR diff remains runtime context, while stable repository knowledge can move to Foundry IQ:
+
+- codebase guidelines;
+- known smells;
+- architecture summaries;
+- dependency rules;
+- review history.
+
+The current CLI keeps `LocalKnowledgeProvider` as a fallback so PR review stays reliable even when Foundry IQ bootstrap is not configured.

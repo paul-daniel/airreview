@@ -6,7 +6,9 @@ AirReview is designed so prompt, agent, evaluation, and pipeline changes are ver
 
 ```text
 src/airreview/prompts/*.md        Prompt instructions
+foundry/models.yaml              Desired model deployment state
 foundry/agents/*.yaml            Foundry prompt agent manifests
+foundry/knowledge.yaml           Foundry IQ target architecture
 evals/*.json                     Foundry evaluation datasets
 .github/workflows/*.yml          CI, PR review, Foundry eval workflows
 .airreview/review_profile.yaml   Review policy template
@@ -19,9 +21,10 @@ developer changes AirReview
 git push
 GitHub Actions runs unit tests and local evals
 GitHub logs into Azure with OIDC
+airreview foundry sync-models creates missing AirReview model deployments
 airreview foundry sync-agents
-microsoft/ai-agent-evals runs quick, pessimistic, security, and coding-complex suites using the synced agent `name:version` refs
-results are visible in Azure AI Foundry
+Foundry eval job is visible but disabled for current demo stability
+agents and model deployments are visible in Azure AI Foundry
 ```
 
 ## Pull Request Flow
@@ -30,10 +33,30 @@ results are visible in Azure AI Foundry
 developer opens or updates a PR
 AirReview PR Review workflow fetches base and head
 airreview reviews the final branch state
-one GitHub PR comment is posted
+one summary comment plus one comment per finding is posted
+inline comments are used when GitHub can attach the finding to a diff line
 the check fails on medium/high/critical findings
 AirReview GenAIOps workflow runs tests and deterministic evals without posting a second comment
 ```
+
+## Foundry Model Sync
+
+Model deployments are declared in `foundry/models.yaml` and versioned with the product:
+
+```bash
+airreview foundry sync-models --dry-run
+```
+
+Real sync:
+
+```bash
+export FOUNDRY_RESOURCE_GROUP="<resource-group>"
+export FOUNDRY_RESOURCE_NAME="<ai-services-or-foundry-resource-name>"
+az login
+airreview foundry sync-models
+```
+
+The command creates missing `airreview-*` deployments. It does not delete deployments by default. Use `--prune` only when you intentionally want to remove orphaned `airreview-*` deployments not declared in `foundry/models.yaml`.
 
 ## Foundry Agent Sync
 
@@ -47,7 +70,6 @@ Real sync:
 
 ```bash
 export FOUNDRY_PROJECT_ENDPOINT="https://<resource>.services.ai.azure.com/api/projects/<project>"
-export FOUNDRY_MODEL="<deployment-name>"
 az login
 pip install ".[foundry]"
 airreview foundry sync-agents
@@ -95,10 +117,10 @@ Foundry evals are currently an observability target in this demo workflow rather
 
 Reliable today:
 
-- GitHub PR comment workflow.
+- GitHub PR review workflow with inline comments and fallback comments.
 - Direct Foundry model calls.
+- Foundry desired-state model sync.
 - Foundry prompt agent sync.
-- Foundry agent evaluations through `microsoft/ai-agent-evals@v3-beta`.
 - Local traces in `.airreview/runs`.
 
 Preview / architecture target:
@@ -106,3 +128,4 @@ Preview / architecture target:
 - Full hosted multi-agent workflow entirely visible as a single Foundry workflow.
 - GitHub and Git tools exposed to hosted agents through MCP/OpenAPI.
 - Foundry IQ-backed repository knowledge replacing local `.airreview` knowledge.
+- Foundry agent evaluations through `microsoft/ai-agent-evals@v3-beta` once preview polling is stable for this project.

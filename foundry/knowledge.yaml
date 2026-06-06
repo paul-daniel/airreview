@@ -1,0 +1,21 @@
+knowledge:
+  provider: foundry_iq
+  mode: optional
+  fallback_provider: local
+  namespace_prefix: airreview
+  repositories:
+    default:
+      knowledge_base: airreview-repository-knowledge
+      sources:
+        - codebase_guidelines
+        - known_smells
+        - architecture_summary
+        - dependency_rules
+        - review_history
+  bootstrap:
+    lock_provider: azure_blob_lease
+    fallback_lock_provider: github_actions_concurrency
+    refresh_policy:
+      on_profile_change: true
+      on_dependency_change: true
+      scheduled: weekly

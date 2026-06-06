@@ -1,0 +1,35 @@
+models:
+  planning:
+    deployment_name: airreview-planning-mini
+    model: gpt-4.1-mini
+    model_format: OpenAI
+    sku: GlobalStandard
+    capacity: 10
+
+  codebase_context:
+    deployment_name: airreview-context-mini
+    model: gpt-4.1-mini
+    model_format: OpenAI
+    sku: GlobalStandard
+    capacity: 10
+
+  branch_review:
+    deployment_name: airreview-review-codex
+    model: gpt-5-codex
+    model_format: OpenAI
+    sku: GlobalStandard
+    capacity: 10
+
+  finding_critic:
+    deployment_name: airreview-critic-mini
+    model: gpt-4.1-mini
+    model_format: OpenAI
+    sku: GlobalStandard
+    capacity: 10
+
+  fix_suggestion:
+    deployment_name: airreview-fix-codex
+    model: gpt-5-codex
+    model_format: OpenAI
+    sku: GlobalStandard
+    capacity: 10

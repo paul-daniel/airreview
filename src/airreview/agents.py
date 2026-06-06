@@ -19,6 +19,7 @@ class Finding:
     issue: str
     why_it_matters: str
     confidence: Confidence
+    end_line: int = 0
 
 
 @dataclass
@@ -119,6 +120,7 @@ def findings_from_json(payload: dict[str, Any]) -> list[Finding]:
                 issue=str(item.get("issue", "")),
                 why_it_matters=str(item.get("why_it_matters", "")),
                 confidence=_confidence(item.get("confidence")),
+                end_line=int(item.get("end_line") or 0),
             )
         )
     return findings
