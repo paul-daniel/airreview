@@ -64,6 +64,9 @@ def fetch(repo: Path) -> None:
 def detect_branch(repo: Path, explicit_branch: str | None = None) -> str:
     if explicit_branch:
         return normalize_ref(explicit_branch)
+    github_head = os.getenv("GITHUB_HEAD_REF")
+    if github_head:
+        return normalize_ref(github_head)
     env_branch = os.getenv("SYSTEM_PULLREQUEST_SOURCEBRANCH")
     if env_branch:
         return normalize_ref(env_branch)
@@ -76,6 +79,10 @@ def detect_branch(repo: Path, explicit_branch: str | None = None) -> str:
 def detect_base(repo: Path, explicit_base: str | None = None) -> str:
     if explicit_base:
         return normalize_ref(explicit_base, prefer_remote=False)
+
+    github_base = os.getenv("GITHUB_BASE_REF")
+    if github_base:
+        return normalize_ref(github_base, prefer_remote=True)
 
     ado_target = os.getenv("SYSTEM_PULLREQUEST_TARGETBRANCH")
     if ado_target:

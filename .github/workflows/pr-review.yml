@@ -1,0 +1,48 @@
+name: AirReview PR Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: read
+  issues: write
+
+jobs:
+  airreview:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout PR repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch PR head and base
+        run: |
+          git fetch origin "+refs/heads/${{ github.base_ref }}:refs/remotes/origin/${{ github.base_ref }}"
+          git fetch origin "+refs/pull/${{ github.event.pull_request.number }}/head:refs/heads/airreview-pr-head"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install AirReview
+        run: |
+          python -m pip install --upgrade pip
+          pip install .
+
+      - name: Run AirReview and comment on PR
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          FOUNDRY_PROJECT_ENDPOINT: ${{ vars.FOUNDRY_PROJECT_ENDPOINT }}
+          FOUNDRY_MODEL: ${{ vars.FOUNDRY_MODEL }}
+          FOUNDRY_API_KEY: ${{ secrets.FOUNDRY_API_KEY }}
+          AIRREVIEW_AGENT_MODE: ${{ vars.AIRREVIEW_AGENT_MODE }}
+        run: |
+          airreview airreview-pr-head \
+            --base origin/${{ github.base_ref }} \
+            --output \
+            --post-github \
+            --fail-on medium

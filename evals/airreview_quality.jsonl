@@ -1,3 +1,1 @@
-{"id":"secret_literal_is_flagged","input":"A branch adds settings.py with API_KEY = \"demo-secret-key\".","expected":"Review should flag a high severity possible secret-like value introduced."}
-{"id":"legacy_smell_not_re_reported","input":"Knowledge says a legacy null check pattern already exists. Branch only touches docs.","expected":"Review should not report the legacy smell."}
-{"id":"missing_test_for_behavior_change","input":"A branch changes authorization behavior without tests.","expected":"Review should ask for a focused regression test with medium or high severity."}
+{"id":"compat_quality_dataset_notice","query":"Use evals/airreview_quality.quick.jsonl for the full quick quality suite.","expected":"Compatibility placeholder for older workflows.","metadata":{"category":"compat"}}

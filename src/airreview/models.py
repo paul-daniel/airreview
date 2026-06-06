@@ -171,9 +171,66 @@ class FoundryModelClient(ModelClient):
         raise RuntimeError(f"Foundry chat completion failed after compatibility fallbacks: {last_error}")
 
 
+class FoundryAgentClient(ModelClient):
+    provider_name = "foundry_agents"
+
+    def __init__(self) -> None:
+        self.endpoint = first_env(
+            "FOUNDRY_PROJECT_ENDPOINT",
+            "AZURE_AI_PROJECT_ENDPOINT",
+            "AZURE_AI_FOUNDRY_ENDPOINT",
+            "FOUNDRY_ENDPOINT",
+        )
+        self.model_name = "foundry-agent-service"
+        self.api_key = first_env("FOUNDRY_API_KEY", "AZURE_AI_API_KEY")
+        if not self.endpoint:
+            raise RuntimeError("Foundry project endpoint is required for AIRREVIEW_AGENT_MODE=foundry_agents.")
+        self.agent_names = {
+            "Review Planning Agent": first_env("AIRREVIEW_FOUNDRY_PLANNING_AGENT", default="airreview-planning-agent"),
+            "Codebase Context Agent": first_env("AIRREVIEW_FOUNDRY_CONTEXT_AGENT", default="airreview-codebase-context-agent"),
+            "Branch Review Agent": first_env("AIRREVIEW_FOUNDRY_REVIEW_AGENT", default="airreview-branch-review-agent"),
+            "Finding Critic Agent": first_env("AIRREVIEW_FOUNDRY_CRITIC_AGENT", default="airreview-finding-critic-agent"),
+            "Fix Suggestion Agent": first_env("AIRREVIEW_FOUNDRY_FIX_AGENT", default="airreview-fix-suggestion-agent"),
+        }
+
+    def complete_json(self, agent_name: str, instructions: str, payload: dict[str, Any]) -> str:
+        from openai import OpenAI
+
+        base_url = normalize_openai_base_url(self.endpoint)
+        api_key: str | Any
+        if self.api_key:
+            api_key = self.api_key
+        else:
+            from azure.identity import DefaultAzureCredential, get_bearer_token_provider
+
+            token_provider = get_bearer_token_provider(DefaultAzureCredential(), "https://ai.azure.com/.default")
+            api_key = token_provider()
+        client = OpenAI(base_url=base_url, api_key=api_key)
+        foundry_agent_name = self.agent_names.get(agent_name)
+        if not foundry_agent_name:
+            raise RuntimeError(f"No Foundry agent mapping configured for {agent_name}.")
+        user_content = json.dumps(
+            {
+                "agent": agent_name,
+                "payload": payload,
+                "requirement": "Return only a strict JSON object matching the requested schema. No prose, no Markdown.",
+            },
+            ensure_ascii=False,
+        )
+        response = client.responses.create(
+            model=first_env("FOUNDRY_MODEL", "AZURE_AI_MODEL_DEPLOYMENT_NAME", "AZURE_AI_MODEL", default="gpt-5-mini"),
+            instructions=instructions,
+            input=user_content,
+            extra_body={"agent": {"name": foundry_agent_name, "type": "agent_reference"}},
+        )
+        return response.output_text or "{}"
+
+
 def build_model_client(mock: bool) -> ModelClient:
     if mock:
         return MockModelClient()
+    if first_env("AIRREVIEW_AGENT_MODE").lower() == "foundry_agents":
+        return FoundryAgentClient()
     return FoundryModelClient()
 
 

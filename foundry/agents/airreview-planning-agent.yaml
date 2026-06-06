@@ -1,0 +1,4 @@
+name: airreview-planning-agent
+description: Plans AirReview branch review chunks and token budget.
+model: ${FOUNDRY_MODEL}
+prompt_file: src/airreview/prompts/review_planning_agent.md

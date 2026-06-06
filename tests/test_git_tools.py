@@ -84,3 +84,14 @@ def test_collect_branch_context_staged_scope_only_reviews_index(tmp_path: Path) 
     assert "return False" in context.final_files["app.py"]
     assert "unstaged" not in context.final_files["app.py"]
     assert "untracked.py" not in context.changed_files
+
+
+def test_detect_base_uses_github_base_ref(tmp_path: Path, monkeypatch) -> None:
+    git(tmp_path, "init", "-b", "main")
+    (tmp_path / "app.py").write_text("x = 1\n", encoding="utf-8")
+    git(tmp_path, "add", "app.py")
+    git(tmp_path, "-c", "user.email=test@example.com", "-c", "user.name=Test", "commit", "-m", "initial")
+    git(tmp_path, "branch", "origin/main")
+    monkeypatch.setenv("GITHUB_BASE_REF", "main")
+
+    assert detect_base(tmp_path) == "origin/main"

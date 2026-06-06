@@ -1,0 +1,4 @@
+name: airreview-branch-review-agent
+description: Reviews final branch state against the reference branch.
+model: ${FOUNDRY_MODEL}
+prompt_file: src/airreview/prompts/branch_review_agent.md

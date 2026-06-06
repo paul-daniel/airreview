@@ -11,8 +11,10 @@ from rich.table import Table
 from .azure_devops import pr_context
 from .config import init_files, load_review_profile
 from .git_tools import detect_base, ensure_git_repo, ref_exists
+from .github import github_context
 from .knowledge import LocalKnowledgeProvider
 from .evals import run_local_evals, write_eval_report
+from .foundry_sync import sync_agents
 from .models import build_model_client
 from .rendering import (
     console,
@@ -45,6 +47,8 @@ def main(argv: list[str] | None = None) -> int:
             return cmd_doctor(repo)
         if command == "eval":
             return cmd_eval(repo, output=args.output, mock=args.mock)
+        if command == "foundry":
+            return cmd_foundry(repo, args)
         return cmd_review(repo, args)
     except Exception as exc:
         error(str(exc))
@@ -52,7 +56,7 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def build_parser(raw_args: list[str]) -> argparse.ArgumentParser:
-    if raw_args and raw_args[0] in {"init", "knowledge", "doctor", "eval"}:
+    if raw_args and raw_args[0] in {"init", "knowledge", "doctor", "eval", "foundry"}:
         parser = argparse.ArgumentParser(prog="airreview", description="Agentic branch code review, local-first.")
         subparsers = parser.add_subparsers(dest="command", required=True)
         init_parser = subparsers.add_parser("init", help="Initialize AirReview configuration and local knowledge.")
@@ -62,6 +66,10 @@ def build_parser(raw_args: list[str]) -> argparse.ArgumentParser:
         eval_parser = subparsers.add_parser("eval", help="Run local AirReview evaluation cases.")
         eval_parser.add_argument("--output", "-o", default="airreview-eval-results.json", help="Write eval JSON report.")
         eval_parser.add_argument("--mock", action="store_true", default=True, help="Use mock model for deterministic evals.")
+        foundry_parser = subparsers.add_parser("foundry", help="Foundry GenAIOps commands.")
+        foundry_sub = foundry_parser.add_subparsers(dest="foundry_command", required=True)
+        sync_parser = foundry_sub.add_parser("sync-agents", help="Create/update Foundry prompt agents from manifests.")
+        sync_parser.add_argument("--dry-run", action="store_true", help="Show agent sync plan without calling Foundry.")
         return parser
     parser = argparse.ArgumentParser(prog="airreview", description="Agentic branch code review, local-first.")
     parser.set_defaults(command=None)
@@ -77,6 +85,7 @@ def build_parser(raw_args: list[str]) -> argparse.ArgumentParser:
     parser.add_argument("--mock", action="store_true", help="Use deterministic local model output.")
     parser.add_argument("--fetch", action="store_true", help="Fetch remotes before computing branch diff.")
     parser.add_argument("--post-ado", action="store_true", help="Post a global Azure DevOps PR comment.")
+    parser.add_argument("--post-github", action="store_true", help="Post a global GitHub pull request comment.")
     parser.add_argument("--dry-run", action="store_true", help="Do not post to Azure DevOps; record intent only.")
     parser.add_argument("--fail-on", choices=["low", "medium", "high", "critical"], default=None, help="Exit non-zero when findings at this severity or higher exist.")
     return parser
@@ -140,6 +149,8 @@ def cmd_doctor(repo: Path) -> int:
     table.add_row("Foundry model", "ok" if foundry_model else "missing", foundry_model or "Use --mock or set FOUNDRY_MODEL")
     ado = pr_context()
     table.add_row("Azure DevOps PR", "ok" if ado.is_complete else "optional", "complete" if ado.is_complete else "Only needed for --post-ado")
+    gh = github_context()
+    table.add_row("GitHub PR", "ok" if gh.is_complete else "optional", "complete" if gh.is_complete else "Only needed for --post-github")
     console.print(table)
     return 0
 
@@ -163,6 +174,27 @@ def cmd_eval(repo: Path, output: str, mock: bool = True) -> int:
     return 0 if result["passed"] == result["total"] else 1
 
 
+def cmd_foundry(repo: Path, args: argparse.Namespace) -> int:
+    header()
+    if args.foundry_command == "sync-agents":
+        rows = sync_agents(repo, dry_run=args.dry_run)
+        table = Table(title="Foundry Agent Sync", show_header=True, header_style="bold cyan")
+        table.add_column("Agent")
+        table.add_column("Model")
+        table.add_column("Version")
+        table.add_column("Mode")
+        for row in rows:
+            table.add_row(
+                str(row.get("name")),
+                str(row.get("model", "-")),
+                str(row.get("version", "-")),
+                "dry-run" if row.get("dry_run") else "synced",
+            )
+        console.print(table)
+        return 0
+    raise RuntimeError(f"Unsupported Foundry command: {args.foundry_command}")
+
+
 def cmd_review(repo: Path, args: argparse.Namespace) -> int:
     header()
     ensure_git_repo(repo)
@@ -180,6 +212,7 @@ def cmd_review(repo: Path, args: argparse.Namespace) -> int:
             mock=args.mock,
             fetch=args.fetch,
             post_ado=args.post_ado,
+            post_github=args.post_github,
             dry_run=args.dry_run,
             fail_on=args.fail_on,
         )

@@ -25,3 +25,20 @@ The MVP orchestrates locally for demo reliability. The target enterprise version
 ## Why local first
 
 The Saturday demo must run without cloud setup. Local mock mode proves the experience, shape of the data, review policy, traceability, and pipeline ergonomics. Foundry becomes the deployment and shared knowledge layer, not a demo blocker.
+
+## Prompt agent manifests
+
+Versioned manifests live in:
+
+```text
+foundry/agents/*.yaml
+```
+
+Sync them with:
+
+```bash
+airreview foundry sync-agents --dry-run
+airreview foundry sync-agents
+```
+
+When `AIRREVIEW_AGENT_MODE=foundry_agents`, the CLI calls these Foundry prompt agents instead of calling the model deployment directly.

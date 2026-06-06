@@ -58,6 +58,8 @@ airreview init --force
 airreview knowledge
 airreview doctor
 airreview --fetch --output --post-ado
+airreview --fetch --output --post-github
+airreview foundry sync-agents --dry-run
 ```
 
 `--output` without a value writes `.airreview/reviews/<branch>/review.md` and a sibling `.airreview/reviews/<branch>/review.json`. If you pass a relative name, for example `--output review_output.md`, AirReview writes `.airreview/reviews/<branch>/review_output.md`. Review artifacts stay under `.airreview/reviews/` and are ignored by Git by default.
@@ -177,11 +179,43 @@ Pipeline requirements:
 
 The MVP posts one global PR thread. Line-by-line comments are intentionally out of scope for demo reliability.
 
+## GitHub PR review
+
+`.github/workflows/pr-review.yml` reviews every pull request and posts one global GitHub PR comment:
+
+```bash
+airreview airreview-pr-head --base origin/<base> --output --post-github --fail-on medium
+```
+
+See [GITHUB_SETUP.md](GITHUB_SETUP.md) for permissions, variables, and GitHub OIDC setup.
+
+## Foundry agents
+
+AirReview can call either the Foundry model endpoint directly or five prompt agents in Foundry Agent Service.
+
+Sync prompt agents:
+
+```bash
+airreview foundry sync-agents --dry-run
+airreview foundry sync-agents
+```
+
+Run through Foundry agents:
+
+```bash
+export AIRREVIEW_AGENT_MODE=foundry_agents
+airreview --base main --output
+```
+
+See [GENAIOPS.md](GENAIOPS.md) and [DEMO_FOUNDRY.md](DEMO_FOUNDRY.md).
+
 ## GenAIOps
 
 AirReview keeps operational assets versionable:
 
 - prompts in `src/airreview/prompts/`;
+- Foundry agent manifests in `foundry/agents/`;
+- evaluation datasets in `evals/*.jsonl`;
 - review policy in `.airreview/review_profile.yaml`;
 - run traces in `.airreview/runs/<run-id>/trace.json`;
 - reproducible Markdown output;

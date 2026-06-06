@@ -1,0 +1,4 @@
+name: airreview-codebase-context-agent
+description: Extracts repository-specific review context from AirReview knowledge.
+model: ${FOUNDRY_MODEL}
+prompt_file: src/airreview/prompts/codebase_context_agent.md

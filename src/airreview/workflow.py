@@ -18,6 +18,7 @@ from .azure_devops import post_pr_comment, pr_context
 from .config import ReviewProfile
 from .dependencies import scan_dependency_context
 from .git_tools import BranchContext, collect_branch_context, fetch
+from .github import github_context, post_pr_comment as post_github_pr_comment
 from .history import compare_findings, load_previous_review, save_review_json
 from .knowledge import KnowledgeBundle, LocalKnowledgeProvider
 from .models import ModelClient
@@ -34,6 +35,7 @@ class RunOptions:
     mock: bool = False
     fetch: bool = False
     post_ado: bool = False
+    post_github: bool = False
     dry_run: bool = False
     fail_on: str | None = None
 
@@ -100,6 +102,7 @@ class AirReviewWorkflow:
             knowledge = self.tools.call("knowledge_load", provider.load)
         self.tools.call("review_profile_load", lambda: self.profile.raw)
         self.tools.call("azure_devops.context", pr_context)
+        self.tools.call("github.context", github_context)
         dependency_context = self.tools.call("dependency_context.scan", scan_dependency_context, self.repo)
 
         planner_agent = JsonAgent("Review Planning Agent", "review_planning_agent.md", self.model_client)
@@ -220,6 +223,9 @@ class AirReviewWorkflow:
         if options.post_ado:
             markdown = build_markdown(branch_context, self.profile, knowledge, result, self.trace)
             self.tools.call("azure_devops_post_pr_comment", post_pr_comment, markdown, options.dry_run)
+        if options.post_github:
+            markdown = build_markdown(branch_context, self.profile, knowledge, result, self.trace)
+            self.tools.call("github_post_pr_comment", post_github_pr_comment, markdown, options.dry_run)
         trace_path = self.trace.write()
         return WorkflowOutput(branch_context, knowledge, result, markdown_path, trace_path, should_fail=should_fail(result, options.fail_on))
 

@@ -1,0 +1,4 @@
+name: airreview-fix-suggestion-agent
+description: Produces concrete, contextual fix suggestions for accepted findings.
+model: ${FOUNDRY_MODEL}
+prompt_file: src/airreview/prompts/fix_suggestion_agent.md
