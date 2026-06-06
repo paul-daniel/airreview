@@ -1,0 +1,18 @@
+profile: balanced
+severity_threshold: medium
+post_mode: summary
+max_findings: 8
+suggest_fixes: true
+include_tests: true
+ignore_low_confidence: true
+output:
+  markdown: true
+  console: true
+knowledge:
+  provider: local
+  auto_init: true
+foundry:
+  provider: azure_ai_inference
+azure_devops:
+  post_comments: false
+  comment_mode: single_thread

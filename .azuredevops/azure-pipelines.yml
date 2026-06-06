@@ -1,0 +1,49 @@
+trigger: none
+
+pr:
+  branches:
+    include:
+      - "*"
+
+pool:
+  vmImage: ubuntu-latest
+
+steps:
+  - checkout: self
+    fetchDepth: 0
+    persistCredentials: true
+
+  - task: UsePythonVersion@0
+    inputs:
+      versionSpec: "3.12"
+
+  - script: |
+      python -m pip install --upgrade pip
+      pip install -e .
+    displayName: Install AirReview
+
+  - script: |
+      airreview --fetch --output --post-ado --fail-on medium
+    displayName: Run AirReview
+    env:
+      SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+      FOUNDRY_PROJECT_ENDPOINT: $(FOUNDRY_PROJECT_ENDPOINT)
+      FOUNDRY_MODEL: $(FOUNDRY_MODEL)
+      FOUNDRY_API_KEY: $(FOUNDRY_API_KEY)
+
+  - script: |
+      airreview eval --output airreview-eval-results.json
+    displayName: Run AirReview local evals
+
+  # Optional Foundry portal evaluations. Configure an Azure Resource Manager
+  # service connection and the variables below before enabling this task.
+  # - task: AIAgentEvaluation@2
+  #   displayName: Evaluate AI Agents in Azure AI Foundry
+  #   inputs:
+  #     azure-ai-project-endpoint: "$(FOUNDRY_PROJECT_ENDPOINT)"
+  #     deployment-name: "$(FOUNDRY_MODEL)"
+  #     data-path: "$(System.DefaultWorkingDirectory)/evals/airreview_quality.jsonl"
+  #     agent-ids: "$(FOUNDRY_AGENT_IDS)"
+
+# Required pipeline setting:
+# Enable "Allow scripts to access OAuth token" so System.AccessToken can post the PR comment.

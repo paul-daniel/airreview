@@ -1,0 +1,9 @@
+diff --git a/app.py b/app.py
+index 83db48f..bf22a41 100644
+--- a/app.py
++++ b/app.py
+@@ -1,3 +1,5 @@
+ def handler(request):
++    # TODO: add auth owner before production
++    api_key = "demo-secret"
+     return {"ok": True}

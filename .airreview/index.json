@@ -1,0 +1,15 @@
+{
+  "repo_name": "AirReviewer",
+  "branch": "master",
+  "timestamp": "2026-06-05T20:19:26.477827+00:00",
+  "scanned_files": 25,
+  "languages": [
+    "Markdown",
+    "Python",
+    "TOML",
+    "YAML"
+  ],
+  "signature": "01ed0e29eb530d99",
+  "generated_guidelines": true,
+  "provider": "local"
+}

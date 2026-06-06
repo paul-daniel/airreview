@@ -1,0 +1,8 @@
+rich>=13.7.0
+PyYAML>=6.0.1
+requests>=2.31.0
+openai>=1.68.0
+azure-identity>=1.17.0
+
+# Optional for Foundry Agent Service provisioning scripts:
+# azure-ai-projects>=2.0.0b2
