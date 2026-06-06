@@ -48,7 +48,6 @@ jobs:
     needs: test-evaluate
     outputs:
       can-sync: ${{ steps.check.outputs.can-sync }}
-      can-eval: ${{ steps.check.outputs.can-eval }}
     steps:
       - name: Check Foundry configuration
         id: check
@@ -58,7 +57,6 @@ jobs:
           AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
           AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
           AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
-          FOUNDRY_AGENT_IDS: ${{ vars.FOUNDRY_AGENT_IDS }}
         run: |
           missing_sync=()
           for name in FOUNDRY_PROJECT_ENDPOINT FOUNDRY_MODEL AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID; do
@@ -73,20 +71,13 @@ jobs:
             echo "can-sync=false" >> "$GITHUB_OUTPUT"
             echo "::notice title=Foundry sync skipped::Missing variables: ${missing_sync[*]}"
           fi
-          if [ "${#missing_sync[@]}" -eq 0 ] && [ -n "$FOUNDRY_AGENT_IDS" ]; then
-            echo "can-eval=true" >> "$GITHUB_OUTPUT"
-            echo "Foundry agent evaluations are configured."
-          else
-            echo "can-eval=false" >> "$GITHUB_OUTPUT"
-            if [ -z "$FOUNDRY_AGENT_IDS" ]; then
-              echo "::notice title=Foundry evals skipped::Set FOUNDRY_AGENT_IDS after the first agent sync."
-            fi
-          fi
 
   foundry-sync:
     if: ${{ needs.foundry-readiness.outputs.can-sync == 'true' }}
     runs-on: ubuntu-latest
     needs: foundry-readiness
+    outputs:
+      agent-refs: ${{ steps.agent_refs.outputs.agent-refs }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -112,13 +103,33 @@ jobs:
         env:
           FOUNDRY_PROJECT_ENDPOINT: ${{ vars.FOUNDRY_PROJECT_ENDPOINT }}
           FOUNDRY_MODEL: ${{ vars.FOUNDRY_MODEL }}
-        run: airreview foundry sync-agents
+        run: airreview foundry sync-agents --output-json foundry-agent-sync.json
+
+      - name: Export synced agent refs
+        id: agent_refs
+        run: |
+          python - <<'PY'
+          import json
+          import os
+
+          rows = json.loads(open("foundry-agent-sync.json", encoding="utf-8").read())
+          refs = []
+          for row in rows:
+            name = str(row.get("name") or "").strip()
+            version = str(row.get("version") or "").strip()
+            if not name or not version or version == "-":
+              raise SystemExit(f"Cannot build agent ref from sync row: {row}")
+            refs.append(f"{name}:{version}")
+          value = ",".join(refs)
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+            output.write(f"agent-refs={value}\n")
+          print(f"Foundry eval agent refs: {value}")
+          PY
 
   foundry-agent-evals:
-    if: ${{ needs.foundry-readiness.outputs.can-eval == 'true' }}
+    if: ${{ needs.foundry-sync.outputs.agent-refs != '' }}
     runs-on: ubuntu-latest
     needs:
-      - foundry-readiness
       - foundry-sync
     strategy:
       fail-fast: false
@@ -144,5 +155,5 @@ jobs:
         with:
           azure-ai-project-endpoint: ${{ vars.FOUNDRY_PROJECT_ENDPOINT }}
           deployment-name: ${{ vars.FOUNDRY_MODEL }}
-          agent-ids: ${{ vars.FOUNDRY_AGENT_IDS }}
+          agent-ids: ${{ needs.foundry-sync.outputs.agent-refs }}
           data-path: ${{ github.workspace }}/${{ matrix.suite }}

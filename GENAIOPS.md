@@ -20,7 +20,7 @@ git push
 GitHub Actions runs unit tests and local evals
 GitHub logs into Azure with OIDC
 airreview foundry sync-agents
-if FOUNDRY_AGENT_IDS is set, microsoft/ai-agent-evals runs quick, pessimistic, and security suites
+microsoft/ai-agent-evals runs quick, pessimistic, security, and coding-complex suites using the synced agent `name:version` refs
 results are visible in Azure AI Foundry
 ```
 
@@ -63,7 +63,7 @@ airreview-finding-critic-agent
 airreview-fix-suggestion-agent
 ```
 
-The first GitHub run can create/sync those agents without `FOUNDRY_AGENT_IDS`. The evaluation action needs `FOUNDRY_AGENT_IDS`, so set it after the first successful sync.
+The GitHub workflow does not need manual `FOUNDRY_AGENT_IDS`. The sync step exports refs such as `airreview-planning-agent:3`, which is the format expected by `microsoft/ai-agent-evals`. Do not use the Entra identity UUIDs shown in the portal.
 
 ## Foundry Agent Runtime
 

@@ -45,7 +45,6 @@ In GitHub repository settings, add these Actions variables:
 FOUNDRY_PROJECT_ENDPOINT=https://<resource>.services.ai.azure.com/api/projects/<project>
 FOUNDRY_MODEL=<deployment-name>
 AIRREVIEW_AGENT_MODE=foundry_agents
-FOUNDRY_AGENT_IDS=<comma-separated-agent-ids-or-names-for-evals>
 AZURE_CLIENT_ID=<federated-app-client-id>
 AZURE_TENANT_ID=<tenant-id>
 AZURE_SUBSCRIPTION_ID=<subscription-id>
@@ -53,7 +52,7 @@ AZURE_SUBSCRIPTION_ID=<subscription-id>
 
 `AIRREVIEW_AGENT_MODE=foundry_agents` is optional. If omitted, AirReview calls the Foundry model endpoint directly.
 
-`FOUNDRY_AGENT_IDS` is only required for the Foundry evaluation workflow. Leave it empty for the first run. After `airreview foundry sync-agents` has created the agents, copy the agent ids from Azure AI Foundry and set this variable.
+Do not set `FOUNDRY_AGENT_IDS`. The workflow now uses the `name:version` refs returned by `airreview foundry sync-agents`, for example `airreview-planning-agent:3`. The UUID shown under Entra agent identity is not accepted by `microsoft/ai-agent-evals`.
 
 ## 4. Repository Secrets
 
@@ -153,10 +152,10 @@ Azure OIDC login
 airreview foundry sync-agents
 ```
 
-If `FOUNDRY_AGENT_IDS` is also set, it then runs:
+After agent sync, it automatically runs:
 
 ```text
-microsoft/ai-agent-evals for quick, pessimistic, and security JSONL suites
+microsoft/ai-agent-evals for quick, pessimistic, security, and coding-complex JSON suites
 ```
 
 This avoids duplicate PR comments while still proving the GenAIOps loop.

@@ -58,6 +58,19 @@ def sync_agents(repo: Path, dry_run: bool = False) -> list[dict[str, Any]]:
     return results
 
 
+def agent_refs(rows: list[dict[str, Any]]) -> list[str]:
+    refs: list[str] = []
+    for row in rows:
+        if row.get("dry_run"):
+            continue
+        name = str(row.get("name") or "").strip()
+        version = str(row.get("version") or "").strip()
+        if not name or not version or version == "-":
+            raise RuntimeError(f"Cannot build Foundry eval agent ref from sync result: {row}")
+        refs.append(f"{name}:{version}")
+    return refs
+
+
 def load_agent_manifests(repo: Path) -> list[AgentManifest]:
     root = repo / "foundry" / "agents"
     if not root.exists():

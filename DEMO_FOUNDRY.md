@@ -32,12 +32,6 @@ AZURE_TENANT_ID
 AZURE_SUBSCRIPTION_ID
 ```
 
-Add this variable after the first agent sync:
-
-```text
-FOUNDRY_AGENT_IDS
-```
-
 Prefer OIDC. Add `FOUNDRY_API_KEY` only as a temporary fallback secret.
 
 GitHub workflow permissions:
@@ -89,9 +83,9 @@ First run:
 - Foundry readiness check;
 - Foundry prompt agent sync.
 
-Then copy the agent ids from Azure AI Foundry into the GitHub variable `FOUNDRY_AGENT_IDS`.
+The sync job exports `name:version` refs for the evaluation action automatically. The UUIDs shown under Entra identity are not used.
 
-Second run:
+Then the workflow runs:
 
 - unit tests;
 - local deterministic evals;

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import shutil
 import sys
 from pathlib import Path
@@ -14,7 +15,7 @@ from .git_tools import detect_base, ensure_git_repo, ref_exists
 from .github import github_context
 from .knowledge import LocalKnowledgeProvider
 from .evals import run_local_evals, write_eval_report
-from .foundry_sync import sync_agents
+from .foundry_sync import agent_refs, sync_agents
 from .models import build_model_client
 from .rendering import (
     console,
@@ -70,6 +71,7 @@ def build_parser(raw_args: list[str]) -> argparse.ArgumentParser:
         foundry_sub = foundry_parser.add_subparsers(dest="foundry_command", required=True)
         sync_parser = foundry_sub.add_parser("sync-agents", help="Create/update Foundry prompt agents from manifests.")
         sync_parser.add_argument("--dry-run", action="store_true", help="Show agent sync plan without calling Foundry.")
+        sync_parser.add_argument("--output-json", help="Write raw sync results for automation.")
         return parser
     parser = argparse.ArgumentParser(prog="airreview", description="Agentic branch code review, local-first.")
     parser.set_defaults(command=None)
@@ -182,15 +184,31 @@ def cmd_foundry(repo: Path, args: argparse.Namespace) -> int:
         table.add_column("Agent")
         table.add_column("Model")
         table.add_column("Version")
+        table.add_column("Eval ref")
         table.add_column("Mode")
         for row in rows:
+            ref = "-"
+            if not row.get("dry_run") and row.get("name") and row.get("version"):
+                ref = f"{row.get('name')}:{row.get('version')}"
             table.add_row(
                 str(row.get("name")),
                 str(row.get("model", "-")),
                 str(row.get("version", "-")),
+                ref,
                 "dry-run" if row.get("dry_run") else "synced",
             )
         console.print(table)
+        if args.output_json:
+            target = Path(args.output_json)
+            if not target.is_absolute():
+                target = repo / target
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(json.dumps(rows, indent=2), encoding="utf-8")
+            ok(f"Foundry sync JSON: {target}")
+        if not args.dry_run:
+            refs = agent_refs(rows)
+            if refs:
+                ok("Foundry eval refs: " + ",".join(refs))
         return 0
     raise RuntimeError(f"Unsupported Foundry command: {args.foundry_command}")
 
