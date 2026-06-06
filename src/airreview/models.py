@@ -212,6 +212,7 @@ class FoundryAgentClient(ModelClient):
         user_content = json.dumps(
             {
                 "agent": agent_name,
+                "runtime_instructions": instructions,
                 "payload": payload,
                 "requirement": "Return only a strict JSON object matching the requested schema. No prose, no Markdown.",
             },
@@ -219,9 +220,8 @@ class FoundryAgentClient(ModelClient):
         )
         response = client.responses.create(
             model=first_env("FOUNDRY_MODEL", "AZURE_AI_MODEL_DEPLOYMENT_NAME", "AZURE_AI_MODEL", default="gpt-5-mini"),
-            instructions=instructions,
             input=user_content,
-            extra_body={"agent": {"name": foundry_agent_name, "type": "agent_reference"}},
+            extra_body={"agent_reference": {"name": foundry_agent_name, "type": "agent_reference"}},
         )
         return response.output_text or "{}"
 

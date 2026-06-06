@@ -1,6 +1,8 @@
 import json
+import sys
+from types import SimpleNamespace
 
-from airreview.models import MockModelClient, normalize_openai_base_url
+from airreview.models import FoundryAgentClient, MockModelClient, normalize_openai_base_url
 
 
 def test_normalize_openai_base_url_appends_openai_v1() -> None:
@@ -42,3 +44,30 @@ def test_mock_fix_suggestion_uses_final_file_shape() -> None:
     assert "resource" not in example
     assert "product_access_approved" not in example
     assert "return False" in example
+
+
+def test_foundry_agent_client_uses_agent_reference(monkeypatch) -> None:
+    calls = []
+
+    class FakeResponses:
+        def create(self, **kwargs):
+            calls.append(kwargs)
+            return SimpleNamespace(output_text='{"ok": true}')
+
+    class FakeOpenAI:
+        def __init__(self, **kwargs):
+            self.responses = FakeResponses()
+
+    monkeypatch.setenv("FOUNDRY_PROJECT_ENDPOINT", "https://example.services.ai.azure.com/api/projects/proj")
+    monkeypatch.setenv("FOUNDRY_API_KEY", "test-key")
+    monkeypatch.setitem(sys.modules, "openai", SimpleNamespace(OpenAI=FakeOpenAI))
+
+    result = FoundryAgentClient().complete_json("Branch Review Agent", "system prompt", {"x": 1})
+
+    assert json.loads(result) == {"ok": True}
+    assert calls
+    assert "instructions" not in calls[0]
+    assert calls[0]["extra_body"] == {
+        "agent_reference": {"name": "airreview-branch-review-agent", "type": "agent_reference"}
+    }
+    assert "runtime_instructions" in calls[0]["input"]
