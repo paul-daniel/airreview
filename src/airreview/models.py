@@ -192,6 +192,13 @@ class FoundryAgentClient(ModelClient):
             "Finding Critic Agent": first_env("AIRREVIEW_FOUNDRY_CRITIC_AGENT", default="airreview-finding-critic-agent"),
             "Fix Suggestion Agent": first_env("AIRREVIEW_FOUNDRY_FIX_AGENT", default="airreview-fix-suggestion-agent"),
         }
+        self.agent_models = {
+            "Review Planning Agent": first_env("AIRREVIEW_FOUNDRY_PLANNING_MODEL", default="airreview-planning-mini"),
+            "Codebase Context Agent": first_env("AIRREVIEW_FOUNDRY_CONTEXT_MODEL", default="airreview-context-mini"),
+            "Branch Review Agent": first_env("AIRREVIEW_FOUNDRY_REVIEW_MODEL", default="airreview-review-codex"),
+            "Finding Critic Agent": first_env("AIRREVIEW_FOUNDRY_CRITIC_MODEL", default="airreview-critic-mini"),
+            "Fix Suggestion Agent": first_env("AIRREVIEW_FOUNDRY_FIX_MODEL", default="airreview-fix-codex"),
+        }
 
     def complete_json(self, agent_name: str, instructions: str, payload: dict[str, Any]) -> str:
         from openai import OpenAI
@@ -209,6 +216,9 @@ class FoundryAgentClient(ModelClient):
         foundry_agent_name = self.agent_names.get(agent_name)
         if not foundry_agent_name:
             raise RuntimeError(f"No Foundry agent mapping configured for {agent_name}.")
+        model_name = self.agent_models.get(agent_name)
+        if not model_name:
+            raise RuntimeError(f"No Foundry model mapping configured for {agent_name}.")
         user_content = json.dumps(
             {
                 "agent": agent_name,
@@ -219,7 +229,7 @@ class FoundryAgentClient(ModelClient):
             ensure_ascii=False,
         )
         response = client.responses.create(
-            model=first_env("FOUNDRY_MODEL", "AZURE_AI_MODEL_DEPLOYMENT_NAME", "AZURE_AI_MODEL", default="gpt-5-mini"),
+            model=model_name,
             input=user_content,
             extra_body={"agent_reference": {"name": foundry_agent_name, "type": "agent_reference"}},
         )

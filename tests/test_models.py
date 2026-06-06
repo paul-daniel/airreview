@@ -67,6 +67,7 @@ def test_foundry_agent_client_uses_agent_reference(monkeypatch) -> None:
     assert json.loads(result) == {"ok": True}
     assert calls
     assert "instructions" not in calls[0]
+    assert calls[0]["model"] == "airreview-review-codex"
     assert calls[0]["extra_body"] == {
         "agent_reference": {"name": "airreview-branch-review-agent", "type": "agent_reference"}
     }
