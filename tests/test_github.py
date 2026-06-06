@@ -4,6 +4,7 @@ from pathlib import Path
 
 from airreview.agents import Finding, ReviewResult, Suggestion
 from airreview.github import commentable_lines_from_diff, github_context, post_review_comments
+from airreview.history import load_review_result
 
 
 def test_github_context_reads_pull_request_event(tmp_path: Path, monkeypatch) -> None:
@@ -108,3 +109,44 @@ def test_post_review_comments_uses_inline_and_fallback(monkeypatch, tmp_path: Pa
     post_urls = [call[1] for call in calls if call[0] == "POST"]
     assert any("/pulls/7/comments" in url for url in post_urls)
     assert sum("/issues/7/comments" in url for url in post_urls) == 2
+
+
+def test_load_review_result_from_saved_json(tmp_path: Path) -> None:
+    path = tmp_path / "review.json"
+    path.write_text(
+        """{
+          "summary": "Reviewed branch.",
+          "findings": [
+            {
+              "file": "src/app.ts",
+              "line": 4,
+              "end_line": 6,
+              "severity": "high",
+              "category": "security",
+              "title": "Unsafe access",
+              "issue": "Problem",
+              "why_it_matters": "Impact",
+              "confidence": "high"
+            }
+          ],
+          "suggestions": [
+            {
+              "finding_title": "Unsafe access",
+              "suggestion": "Tighten the guard.",
+              "example": "return false;",
+              "test_recommendation": "Add a denial test.",
+              "confidence": "high"
+            }
+          ],
+          "plan": {"strategy": "single_pass"}
+        }""",
+        encoding="utf-8",
+    )
+
+    result = load_review_result(path)
+
+    assert result.summary == "Reviewed branch."
+    assert result.findings[0].file == "src/app.ts"
+    assert result.findings[0].end_line == 6
+    assert result.suggestions[0].finding_title == "Unsafe access"
+    assert result.plan["strategy"] == "single_pass"

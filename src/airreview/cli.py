@@ -11,11 +11,12 @@ from rich.table import Table
 
 from .azure_devops import pr_context
 from .config import init_files, load_review_profile
-from .git_tools import detect_base, ensure_git_repo, ref_exists
-from .github import github_context
-from .knowledge import LocalKnowledgeProvider
+from .git_tools import collect_branch_context, detect_base, ensure_git_repo, ref_exists
+from .github import github_context, post_review_comments as post_github_review_comments
 from .evals import run_local_evals, write_eval_report
 from .foundry_sync import agent_refs, sync_agents, sync_models
+from .history import default_json_path, default_markdown_path, load_review_result
+from .knowledge import LocalKnowledgeProvider
 from .models import build_model_client
 from .rendering import (
     console,
@@ -50,6 +51,8 @@ def main(argv: list[str] | None = None) -> int:
             return cmd_eval(repo, output=args.output, mock=args.mock)
         if command == "foundry":
             return cmd_foundry(repo, args)
+        if command == "github":
+            return cmd_github(repo, args)
         return cmd_review(repo, args)
     except Exception as exc:
         error(str(exc))
@@ -57,7 +60,7 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def build_parser(raw_args: list[str]) -> argparse.ArgumentParser:
-    if raw_args and raw_args[0] in {"init", "knowledge", "doctor", "eval", "foundry"}:
+    if raw_args and raw_args[0] in {"init", "knowledge", "doctor", "eval", "foundry", "github"}:
         parser = argparse.ArgumentParser(prog="airreview", description="Agentic branch code review, local-first.")
         subparsers = parser.add_subparsers(dest="command", required=True)
         init_parser = subparsers.add_parser("init", help="Initialize AirReview configuration and local knowledge.")
@@ -76,6 +79,15 @@ def build_parser(raw_args: list[str]) -> argparse.ArgumentParser:
         sync_parser = foundry_sub.add_parser("sync-agents", help="Create/update Foundry prompt agents from manifests.")
         sync_parser.add_argument("--dry-run", action="store_true", help="Show agent sync plan without calling Foundry.")
         sync_parser.add_argument("--output-json", help="Write raw sync results for automation.")
+        github_parser = subparsers.add_parser("github", help="GitHub PR integration commands.")
+        github_sub = github_parser.add_subparsers(dest="github_command", required=True)
+        post_parser = github_sub.add_parser("post", help="Post an already generated AirReview report to a GitHub PR.")
+        post_parser.add_argument("branch", nargs="?", help="Reviewed branch. Defaults to current branch.")
+        post_parser.add_argument("--base", help="Reference branch used to compute the PR diff.")
+        post_parser.add_argument("--scope", choices=["branch", "working", "staged", "uncommitted"], default="branch")
+        post_parser.add_argument("--review-json", help="Path to review.json. Defaults to .airreview/reviews/<branch>/review.json.")
+        post_parser.add_argument("--markdown", help="Path to review.md. Defaults to .airreview/reviews/<branch>/review.md.")
+        post_parser.add_argument("--dry-run", action="store_true", help="Do not post comments; print posting intent only.")
         return parser
     parser = argparse.ArgumentParser(prog="airreview", description="Agentic branch code review, local-first.")
     parser.set_defaults(command=None)
@@ -244,6 +256,37 @@ def cmd_foundry(repo: Path, args: argparse.Namespace) -> int:
             ok(f"Foundry model sync JSON: {target}")
         return 0
     raise RuntimeError(f"Unsupported Foundry command: {args.foundry_command}")
+
+
+def cmd_github(repo: Path, args: argparse.Namespace) -> int:
+    header()
+    if args.github_command != "post":
+        raise RuntimeError(f"Unsupported GitHub command: {args.github_command}")
+    ensure_git_repo(repo)
+    base = resolve_base(repo, args.base)
+    branch_context = collect_branch_context(repo, args.branch, base, args.scope)
+    review_json = Path(args.review_json) if args.review_json else default_json_path(repo, branch_context.branch)
+    markdown_path = Path(args.markdown) if args.markdown else default_markdown_path(repo, branch_context.branch)
+    if not review_json.is_absolute():
+        review_json = repo / review_json
+    if not markdown_path.is_absolute():
+        markdown_path = repo / markdown_path
+    if not review_json.exists():
+        raise RuntimeError(f"Review JSON not found: {review_json}")
+    if not markdown_path.exists():
+        raise RuntimeError(f"Markdown report not found: {markdown_path}")
+    result = load_review_result(review_json)
+    markdown = markdown_path.read_text(encoding="utf-8")
+    payload = post_github_review_comments(result, result.suggestions, branch_context.diff, markdown, args.dry_run)
+    if payload.get("posted"):
+        ok("GitHub comments posted")
+    else:
+        ok(
+            "GitHub post dry-run: "
+            f"{payload.get('inline_comments', 0)} inline, "
+            f"{payload.get('fallback_comments', 0)} fallback"
+        )
+    return 0
 
 
 def cmd_review(repo: Path, args: argparse.Namespace) -> int:

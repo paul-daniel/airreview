@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from .agents import Finding, ReviewResult
+from .agents import Finding, ReviewResult, Suggestion
 from .config import airreview_path
 
 
@@ -31,6 +31,42 @@ def load_previous_review(repo: Path, branch: str) -> dict[str, Any]:
         return json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError:
         return {}
+
+
+def load_review_result(path: Path) -> ReviewResult:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    findings = [
+        Finding(
+            file=str(item.get("file", "")),
+            line=int(item.get("line") or 0),
+            end_line=int(item.get("end_line") or 0),
+            severity=str(item.get("severity", "medium")),  # type: ignore[arg-type]
+            category=str(item.get("category", "quality")),
+            title=str(item.get("title", "Untitled finding")),
+            issue=str(item.get("issue", "")),
+            why_it_matters=str(item.get("why_it_matters", "")),
+            confidence=str(item.get("confidence", "medium")),  # type: ignore[arg-type]
+        )
+        for item in payload.get("findings", [])
+        if isinstance(item, dict)
+    ]
+    suggestions = [
+        Suggestion(
+            finding_title=str(item.get("finding_title", "")),
+            suggestion=str(item.get("suggestion", "")),
+            example=str(item.get("example", "")),
+            test_recommendation=str(item.get("test_recommendation", "")),
+            confidence=str(item.get("confidence", "medium")),  # type: ignore[arg-type]
+        )
+        for item in payload.get("suggestions", [])
+        if isinstance(item, dict)
+    ]
+    return ReviewResult(
+        summary=str(payload.get("summary", "")),
+        findings=findings,
+        suggestions=suggestions,
+        plan=payload.get("plan", {}) if isinstance(payload.get("plan"), dict) else {},
+    )
 
 
 def save_review_json(repo: Path, branch: str, result: ReviewResult, metadata: dict[str, Any]) -> Path:
