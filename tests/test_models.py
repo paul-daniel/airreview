@@ -2,7 +2,7 @@ import json
 import sys
 from types import SimpleNamespace
 
-from airreview.models import FoundryAgentClient, MockModelClient, normalize_openai_base_url
+from airreview.models import FoundryAgentClient, MockModelClient, RetryPolicy, call_with_retry, normalize_openai_base_url
 
 
 def test_normalize_openai_base_url_appends_openai_v1() -> None:
@@ -72,3 +72,25 @@ def test_foundry_agent_client_uses_agent_reference(monkeypatch) -> None:
         "agent_reference": {"name": "airreview-branch-review-agent", "type": "agent_reference"}
     }
     assert "runtime_instructions" in calls[0]["input"]
+
+
+def test_rate_limit_retry_retries_429(monkeypatch) -> None:
+    attempts = {"count": 0}
+    sleeps = []
+
+    class RateLimitError(Exception):
+        status_code = 429
+
+    def flaky_call():
+        attempts["count"] += 1
+        if attempts["count"] == 1:
+            raise RateLimitError("rate_limit_exceeded")
+        return {"ok": True}
+
+    monkeypatch.setattr("airreview.models.time.sleep", lambda seconds: sleeps.append(seconds))
+
+    result = call_with_retry(flaky_call, RetryPolicy(2, [0.1], 0), "test agent")
+
+    assert result == {"ok": True}
+    assert attempts["count"] == 2
+    assert sleeps == [0.1]

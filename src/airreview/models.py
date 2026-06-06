@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import time
 from abc import ABC, abstractmethod
 from typing import Any
 
@@ -106,6 +107,7 @@ class FoundryModelClient(ModelClient):
         self.api_key = first_env("FOUNDRY_API_KEY", "AZURE_AI_API_KEY")
         self.max_output_tokens = int(first_env("AIRREVIEW_MAX_OUTPUT_TOKENS", default="3000"))
         self.use_responses_api = first_env("AIRREVIEW_MODEL_API", default="chat").lower() == "responses"
+        self.retry_policy = RetryPolicy.from_env()
         if not self.endpoint:
             raise RuntimeError(
                 "Foundry endpoint is required outside --mock. Set FOUNDRY_PROJECT_ENDPOINT or AZURE_AI_PROJECT_ENDPOINT "
@@ -134,11 +136,15 @@ class FoundryModelClient(ModelClient):
             ensure_ascii=False,
         )
         if self.use_responses_api:
-            response = client.responses.create(
-                model=self.model_name,
-                instructions=instructions,
-                input=user_content,
-                max_output_tokens=self.max_output_tokens,
+            response = call_with_retry(
+                lambda: client.responses.create(
+                    model=self.model_name,
+                    instructions=instructions,
+                    input=user_content,
+                    max_output_tokens=self.max_output_tokens,
+                ),
+                self.retry_policy,
+                agent_name,
             )
             return response.output_text or "{}"
         response = self._chat_completion(client, instructions, user_content)
@@ -162,7 +168,11 @@ class FoundryModelClient(ModelClient):
         last_error: Exception | None = None
         for extra in attempts:
             try:
-                return client.chat.completions.create(**base_kwargs, **extra)
+                return call_with_retry(
+                    lambda: client.chat.completions.create(**base_kwargs, **extra),
+                    self.retry_policy,
+                    "Foundry chat completion",
+                )
             except Exception as exc:
                 last_error = exc
                 message = str(exc).lower()
@@ -199,6 +209,7 @@ class FoundryAgentClient(ModelClient):
             "Finding Critic Agent": first_env("AIRREVIEW_FOUNDRY_CRITIC_MODEL", default="airreview-critic-mini"),
             "Fix Suggestion Agent": first_env("AIRREVIEW_FOUNDRY_FIX_MODEL", default="airreview-fix-codex"),
         }
+        self.retry_policy = RetryPolicy.from_env()
 
     def complete_json(self, agent_name: str, instructions: str, payload: dict[str, Any]) -> str:
         from openai import OpenAI
@@ -228,10 +239,14 @@ class FoundryAgentClient(ModelClient):
             },
             ensure_ascii=False,
         )
-        response = client.responses.create(
-            model=model_name,
-            input=user_content,
-            extra_body={"agent_reference": {"name": foundry_agent_name, "type": "agent_reference"}},
+        response = call_with_retry(
+            lambda: client.responses.create(
+                model=model_name,
+                input=user_content,
+                extra_body={"agent_reference": {"name": foundry_agent_name, "type": "agent_reference"}},
+            ),
+            self.retry_policy,
+            agent_name,
         )
         return response.output_text or "{}"
 
@@ -250,6 +265,69 @@ def first_env(*names: str, default: str = "") -> str:
         if value:
             return value
     return default
+
+
+class RetryPolicy:
+    def __init__(self, max_attempts: int, backoff_seconds: list[float], call_delay_seconds: float) -> None:
+        self.max_attempts = max(1, max_attempts)
+        self.backoff_seconds = backoff_seconds or [8.0, 20.0, 45.0]
+        self.call_delay_seconds = max(0.0, call_delay_seconds)
+
+    @classmethod
+    def from_env(cls) -> "RetryPolicy":
+        attempts = int(first_env("AIRREVIEW_MODEL_RETRIES", default="4"))
+        backoff_raw = first_env("AIRREVIEW_RATE_LIMIT_BACKOFF_SECONDS", default="8,20,45,75")
+        backoff = []
+        for value in backoff_raw.split(","):
+            cleaned = value.strip()
+            if cleaned:
+                backoff.append(float(cleaned))
+        delay = float(first_env("AIRREVIEW_MODEL_CALL_DELAY_SECONDS", default="0"))
+        return cls(attempts, backoff, delay)
+
+
+def call_with_retry(call: Any, policy: RetryPolicy, operation: str) -> Any:
+    last_error: Exception | None = None
+    for attempt in range(1, policy.max_attempts + 1):
+        if policy.call_delay_seconds:
+            time.sleep(policy.call_delay_seconds)
+        try:
+            return call()
+        except Exception as exc:
+            last_error = exc
+            if not is_retryable_model_error(exc) or attempt >= policy.max_attempts:
+                raise
+            retry_after = retry_after_seconds(exc)
+            delay = retry_after if retry_after is not None else policy.backoff_seconds[min(attempt - 1, len(policy.backoff_seconds) - 1)]
+            print(
+                f"AirReview: {operation} hit a temporary model rate limit; retrying in {delay:.0f}s "
+                f"(attempt {attempt + 1}/{policy.max_attempts}).",
+                flush=True,
+            )
+            time.sleep(delay)
+    raise RuntimeError(f"{operation} failed after retries: {last_error}")
+
+
+def is_retryable_model_error(exc: Exception) -> bool:
+    status_code = getattr(exc, "status_code", None)
+    if status_code in {408, 409, 429, 500, 502, 503, 504}:
+        return True
+    message = str(exc).lower()
+    return any(token in message for token in ("rate_limit", "too many requests", "429", "timeout", "temporarily"))
+
+
+def retry_after_seconds(exc: Exception) -> float | None:
+    response = getattr(exc, "response", None)
+    headers = getattr(response, "headers", None)
+    if not headers:
+        return None
+    value = headers.get("retry-after") or headers.get("Retry-After")
+    if not value:
+        return None
+    try:
+        return max(1.0, float(value))
+    except ValueError:
+        return None
 
 
 def normalize_openai_base_url(endpoint: str) -> str:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -77,6 +78,7 @@ def load_review_profile(repo: Path) -> ReviewProfile:
     profile_path = write_default_profile(repo, force=False)
     loaded = yaml.safe_load(profile_path.read_text(encoding="utf-8")) or {}
     merged = _deep_merge(DEFAULT_PROFILE, loaded)
+    merged = apply_env_overrides(merged)
     return ReviewProfile(
         profile=str(merged.get("profile", "balanced")),
         severity_threshold=str(merged.get("severity_threshold", "medium")),
@@ -122,4 +124,23 @@ def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any
             result[key] = _deep_merge(result[key], value)
         else:
             result[key] = value
+    return result
+
+
+def apply_env_overrides(profile: dict[str, Any]) -> dict[str, Any]:
+    result = dict(profile)
+    budget = dict(result.get("budget", {}))
+    if value := os.getenv("AIRREVIEW_MAX_FINDINGS"):
+        result["max_findings"] = int(value)
+    if value := os.getenv("AIRREVIEW_SEVERITY_THRESHOLD"):
+        result["severity_threshold"] = value
+    if value := os.getenv("AIRREVIEW_MAX_FILES_PER_CHUNK"):
+        budget["max_files_per_chunk"] = int(value)
+    if value := os.getenv("AIRREVIEW_MAX_DIFF_CHARS_PER_CHUNK"):
+        budget["max_diff_chars_per_chunk"] = int(value)
+    if value := os.getenv("AIRREVIEW_MAX_CHUNKS"):
+        budget["max_chunks"] = int(value)
+    if value := os.getenv("AIRREVIEW_STOP_WHEN_BUDGET_EXCEEDED"):
+        budget["stop_when_budget_exceeded"] = value.lower() in {"1", "true", "yes", "on"}
+    result["budget"] = budget
     return result
