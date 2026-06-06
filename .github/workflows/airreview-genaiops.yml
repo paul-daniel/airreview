@@ -129,65 +129,12 @@ jobs:
   foundry-agent-evals:
     if: ${{ needs.foundry-sync.outputs.agent-refs != '' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 20
-    continue-on-error: true
     needs:
       - foundry-sync
-    strategy:
-      fail-fast: false
-      max-parallel: 1
-      matrix:
-        include:
-          - kind: quality_smoke
-            suite: evals/airreview_quality_smoke.json
-          - kind: pessimistic_smoke
-            suite: evals/airreview_pessimistic_smoke.json
-          - kind: security_smoke
-            suite: evals/airreview_security_smoke.json
-          - kind: coding_smoke
-            suite: evals/airreview_coding_smoke.json
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Checkout Microsoft eval action
-        uses: actions/checkout@v4
-        with:
-          repository: microsoft/ai-agent-evals
-          ref: v3-beta
-          path: .github/actions/ai-agent-evals-airreview
-
-      - name: Patch Foundry evaluation display name
-        env:
-          AIRREVIEW_EVAL_NAME: AirReview agent evaluation v${{ github.run_number }} ${{ matrix.kind }}
+      - name: Foundry evaluations disabled for demo stability
         run: |
-          python - <<'PY'
-          import os
-          from pathlib import Path
-
-          action = Path(".github/actions/ai-agent-evals-airreview/action.py")
-          text = action.read_text(encoding="utf-8")
-          old = 'name="Agent Evaluation",'
-          new = 'name=os.getenv("AIRREVIEW_EVAL_NAME", "Agent Evaluation"),'
-          if old not in text:
-            raise SystemExit("Could not find hardcoded evaluation name in Microsoft action.")
-          action.write_text(text.replace(old, new), encoding="utf-8")
-          print("Patched evaluation name to:", os.environ["AIRREVIEW_EVAL_NAME"])
-          PY
-
-      - name: Azure login with OIDC
-        uses: azure/login@v2
-        with:
-          client-id: ${{ vars.AZURE_CLIENT_ID }}
-          tenant-id: ${{ vars.AZURE_TENANT_ID }}
-          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
-
-      - name: Run Azure AI Foundry agent evaluations
-        uses: ./.github/actions/ai-agent-evals-airreview
-        env:
-          AIRREVIEW_EVAL_NAME: AirReview agent evaluation v${{ github.run_number }} ${{ matrix.kind }}
-        with:
-          azure-ai-project-endpoint: ${{ vars.FOUNDRY_PROJECT_ENDPOINT }}
-          deployment-name: ${{ vars.FOUNDRY_MODEL }}
-          agent-ids: ${{ needs.foundry-sync.outputs.agent-refs }}
-          data-path: ${{ github.workspace }}/${{ matrix.suite }}
+          echo "Foundry agent refs prepared: ${{ needs.foundry-sync.outputs.agent-refs }}"
+          echo "Azure AI Foundry agent evaluation execution is temporarily disabled."
+          echo "Reason: microsoft/ai-agent-evals@v3-beta can leave preview evaluation runs in a 404/project-not-found polling state."
+          echo "The agents are still synchronized to Foundry; PR review remains the blocking quality gate."

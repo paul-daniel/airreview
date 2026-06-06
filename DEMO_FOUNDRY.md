@@ -90,9 +90,9 @@ Then the workflow runs:
 - unit tests;
 - local deterministic evals;
 - agent sync;
-- Foundry smoke evals for quick, pessimistic, security, and coding-complex datasets.
+- Foundry eval job appears but execution is temporarily disabled for demo stability.
 
-The workflow intentionally runs one case per eval type with a timeout. The full datasets remain in `evals/` for manual demo expansion once the preview eval action is stable.
+The full datasets remain in `evals/` for manual demo expansion once the preview eval action is stable.
 
 ## 5. Review A GitHub PR
 

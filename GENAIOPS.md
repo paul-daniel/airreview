@@ -85,13 +85,11 @@ evals/airreview_security_smoke.json
 evals/airreview_coding_smoke.json
 ```
 
-The GitHub workflow uses one smoke case per evaluation type so CI cannot get stuck on long preview eval runs. The larger datasets remain in `evals/airreview_quality_quick.json`, `evals/airreview_quality_pessimistic.json`, `evals/airreview_security_guardrails.json`, and `evals/airreview_coding_complex.json` for manual or future scheduled evaluations.
+The GitHub workflow keeps the Foundry evaluation job visible, but temporarily disables execution of `microsoft/ai-agent-evals@v3-beta` for demo stability. The larger datasets remain in `evals/airreview_quality_quick.json`, `evals/airreview_quality_pessimistic.json`, `evals/airreview_security_guardrails.json`, and `evals/airreview_coding_complex.json` for manual or future scheduled evaluations.
 
 Quick quality checks normal review behavior. Pessimistic checks false positives, prompt injection, huge diffs, and uncertainty. Security guardrails check redaction, PII, secrets, and unsafe suggestions. Coding complex evaluates code-level review ability with realistic snippets, cross-file reasoning, package context, missing-file findings, and contextual fix suggestions.
 
-Foundry evals are currently an observability signal in this demo workflow: they run with a timeout and `continue-on-error` because the public action is preview. The PR review quality gate remains the blocking check.
-
-The Microsoft `ai-agent-evals@v3-beta` action currently creates evaluations with the hardcoded name `Agent Evaluation`. For the demo, the workflow checks out the action source, patches that display name at runtime, and creates evaluations named like `AirReview agent evaluation v123 quality_smoke`.
+Foundry evals are currently an observability target in this demo workflow rather than a blocking check. The PR review quality gate remains the blocking check.
 
 ## Current Reality
 
