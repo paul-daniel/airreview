@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 import subprocess
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -57,13 +57,17 @@ def sync_models(repo: Path, dry_run: bool = False, prune: bool = False) -> list[
                 }
             )
             continue
+        resolved_manifest = manifest
         if not dry_run:
-            create_model_deployment(resource_group, resource_name, manifest)
+            resolved_manifest = resolve_model_version(resource_group, resource_name, manifest)
+        if not dry_run:
+            create_model_deployment(resource_group, resource_name, resolved_manifest)
         rows.append(
             {
                 "key": manifest.key,
                 "deployment_name": manifest.deployment_name,
                 "model": manifest.model_name,
+                "model_version": resolved_manifest.model_version,
                 "sku": manifest.sku_name,
                 "capacity": manifest.sku_capacity,
                 "status": "would_create" if dry_run else "created",
@@ -191,7 +195,7 @@ def load_model_manifests(repo: Path, optional: bool = False) -> list[ModelDeploy
                 key=str(key),
                 deployment_name=str(value.get("deployment_name") or f"airreview-{key}"),
                 model_name=str(value.get("model") or value.get("model_name") or ""),
-                model_version=str(value.get("model_version") or ""),
+                model_version=str(value.get("model_version") or "auto"),
                 model_format=str(value.get("model_format") or "OpenAI"),
                 sku_name=str(value.get("sku") or value.get("sku_name") or "GlobalStandard"),
                 sku_capacity=int(value.get("capacity") or value.get("sku_capacity") or 10),
@@ -221,6 +225,65 @@ def list_model_deployments(resource_group: str, resource_name: str) -> dict[str,
     return {str(item.get("name")): item for item in payload if item.get("name")}
 
 
+def resolve_model_version(resource_group: str, resource_name: str, manifest: ModelDeploymentManifest) -> ModelDeploymentManifest:
+    if manifest.model_version and manifest.model_version.lower() != "auto":
+        return manifest
+    location = account_location(resource_group, resource_name)
+    models = list_models(location)
+    version = choose_model_version(models, manifest)
+    if not version:
+        raise RuntimeError(
+            f"Could not resolve a model version for `{manifest.model_name}` in Azure region `{location}`. "
+            "Set `model_version` explicitly in foundry/models.yaml, or choose a model available in that region."
+        )
+    return replace(manifest, model_version=version)
+
+
+def account_location(resource_group: str, resource_name: str) -> str:
+    payload = run_az_json(
+        [
+            "cognitiveservices",
+            "account",
+            "show",
+            "--resource-group",
+            resource_group,
+            "--name",
+            resource_name,
+        ]
+    )
+    location = str(payload.get("location") or "").strip() if isinstance(payload, dict) else ""
+    if not location:
+        raise RuntimeError(f"Could not resolve Azure region for Cognitive Services account `{resource_name}`.")
+    return location
+
+
+def list_models(location: str) -> list[dict[str, Any]]:
+    payload = run_az_json(["cognitiveservices", "model", "list", "--location", location])
+    return payload if isinstance(payload, list) else []
+
+
+def choose_model_version(models: list[dict[str, Any]], manifest: ModelDeploymentManifest) -> str:
+    candidates = [
+        item
+        for item in models
+        if model_field(item, "name").lower() == manifest.model_name.lower()
+        and (not model_field(item, "format") or model_field(item, "format").lower() == manifest.model_format.lower())
+    ]
+    versions = sorted({model_field(item, "version") for item in candidates if model_field(item, "version")})
+    return versions[-1] if versions else ""
+
+
+def model_field(item: dict[str, Any], key: str) -> str:
+    value = item.get(key)
+    if value:
+        return str(value)
+    for nested_key in ("model", "properties"):
+        nested = item.get(nested_key)
+        if isinstance(nested, dict) and nested.get(key):
+            return str(nested[key])
+    return ""
+
+
 def create_model_deployment(resource_group: str, resource_name: str, manifest: ModelDeploymentManifest) -> None:
     args = [
         "cognitiveservices",
@@ -241,9 +304,9 @@ def create_model_deployment(resource_group: str, resource_name: str, manifest: M
         manifest.sku_name,
         "--sku-capacity",
         str(manifest.sku_capacity),
+        "--model-version",
+        manifest.model_version,
     ]
-    if manifest.model_version:
-        args.extend(["--model-version", manifest.model_version])
     run_az_json(args)
 
 
