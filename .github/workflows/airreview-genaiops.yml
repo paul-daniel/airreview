@@ -10,8 +10,6 @@ on:
 permissions:
   contents: read
   id-token: write
-  issues: write
-  pull-requests: read
 
 jobs:
   test-evaluate:
@@ -37,22 +35,6 @@ jobs:
 
       - name: Local deterministic evals
         run: airreview eval --output airreview-eval-results.json
-
-      - name: Fetch PR head and base
-        if: github.event_name == 'pull_request'
-        run: |
-          git fetch origin "+refs/heads/${{ github.base_ref }}:refs/remotes/origin/${{ github.base_ref }}"
-          git fetch origin "+refs/pull/${{ github.event.pull_request.number }}/head:refs/heads/airreview-pr-head"
-
-      - name: AirReview PR quality gate
-        if: github.event_name == 'pull_request'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          FOUNDRY_PROJECT_ENDPOINT: ${{ vars.FOUNDRY_PROJECT_ENDPOINT }}
-          FOUNDRY_MODEL: ${{ vars.FOUNDRY_MODEL }}
-          FOUNDRY_API_KEY: ${{ secrets.FOUNDRY_API_KEY }}
-          AIRREVIEW_AGENT_MODE: ${{ vars.AIRREVIEW_AGENT_MODE }}
-        run: airreview airreview-pr-head --base origin/${{ github.base_ref }} --output --post-github --fail-on medium
 
       - name: Upload eval artifact
         uses: actions/upload-artifact@v4

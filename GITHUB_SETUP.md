@@ -4,14 +4,40 @@ This guide wires AirReview as a GitHub-native PR reviewer.
 
 ## 1. Push AirReview To GitHub
 
-Create an empty GitHub repository, then from this repo:
+The demo repository is:
 
-```bash
-git remote add origin git@github.com:<owner>/airreview.git
-git push -u origin main
+```text
+https://github.com/paul-daniel/airreview.git
 ```
 
-## 2. Repository Variables
+If you already pushed `codex-foundry-genaiops` to `main`, you are done with this step. Otherwise:
+
+```bash
+git remote add origin https://github.com/paul-daniel/airreview.git
+git push -u origin codex-foundry-genaiops:main
+```
+
+## 2. GitHub Actions Permissions
+
+In GitHub:
+
+```text
+Repository Settings
+  -> Actions
+  -> General
+  -> Workflow permissions
+```
+
+Select:
+
+```text
+Read and write permissions
+Allow GitHub Actions to create and approve pull requests: optional
+```
+
+AirReview only needs write permission for one PR comment. GitHub PR comments use the Issues API behind the scenes.
+
+## 3. Repository Variables
 
 In GitHub repository settings, add these Actions variables:
 
@@ -27,7 +53,9 @@ AZURE_SUBSCRIPTION_ID=<subscription-id>
 
 `AIRREVIEW_AGENT_MODE=foundry_agents` is optional. If omitted, AirReview calls the Foundry model endpoint directly.
 
-## 3. Repository Secrets
+`FOUNDRY_AGENT_IDS` is only required for the Foundry evaluation workflow. Put the five agent names or ids after `airreview foundry sync-agents` has created them.
+
+## 4. Repository Secrets
 
 Preferred: use GitHub OIDC and `azure/login@v2`, not API keys.
 
@@ -39,7 +67,27 @@ FOUNDRY_API_KEY=<foundry-api-key>
 
 Never store API keys in GitHub variables.
 
-## 4. PR Review Workflow
+## 5. Azure OIDC Setup
+
+Use OIDC for the real demo path:
+
+1. Create a Microsoft Entra app registration or user-assigned managed identity.
+2. Add a federated credential for this GitHub repository.
+3. Give the identity access to the Azure AI Foundry project.
+4. Store the client id, tenant id, and subscription id as GitHub Actions variables.
+
+For the federated credential:
+
+```text
+Issuer: https://token.actions.githubusercontent.com
+Subject for main pushes: repo:paul-daniel/airreview:ref:refs/heads/main
+Subject for PR demos: repo:paul-daniel/airreview:pull_request
+Audience: api://AzureADTokenExchange
+```
+
+For a stricter production setup, create separate identities for main deployment and PR review.
+
+## 6. PR Review Workflow
 
 `.github/workflows/pr-review.yml` runs on every PR open, synchronize, and reopen:
 
@@ -47,6 +95,7 @@ Never store API keys in GitHub variables.
 checkout full history
 fetch base branch and PR head
 install AirReview
+optional Azure OIDC login
 run airreview airreview-pr-head --base origin/<base> --output --post-github --fail-on medium
 ```
 
@@ -69,6 +118,28 @@ permissions:
   contents: read
   pull-requests: read
   issues: write
+  id-token: write
 ```
 
-GitHub PR comments are issue comments behind the scenes, hence `issues: write`.
+`id-token: write` is only used when OIDC variables are configured. If you use `FOUNDRY_API_KEY`, the Azure login step is skipped.
+
+## 7. GenAIOps Workflow
+
+`.github/workflows/airreview-genaiops.yml` is separate from PR commenting.
+
+On PRs it runs:
+
+```text
+unit tests
+local deterministic evals
+```
+
+On `main` and manual dispatch it also runs:
+
+```text
+Azure OIDC login
+airreview foundry sync-agents
+microsoft/ai-agent-evals for quick, pessimistic, and security JSONL suites
+```
+
+This avoids duplicate PR comments while still proving the GenAIOps loop.

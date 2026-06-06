@@ -24,6 +24,17 @@ microsoft/ai-agent-evals runs quick, pessimistic, and security suites
 results are visible in Azure AI Foundry
 ```
 
+## Pull Request Flow
+
+```text
+developer opens or updates a PR
+AirReview PR Review workflow fetches base and head
+airreview reviews the final branch state
+one GitHub PR comment is posted
+the check fails on medium/high/critical findings
+AirReview GenAIOps workflow runs tests and deterministic evals without posting a second comment
+```
+
 ## Foundry Agent Sync
 
 Dry run:
