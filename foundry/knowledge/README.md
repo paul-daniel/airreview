@@ -9,27 +9,22 @@ Use two source groups:
 
 Do not place secrets, private code dumps, or full proprietary source trees here. The PR diff remains runtime context. The search index should contain stable guidance that multiple agents can retrieve when needed.
 
-## Demo Path: Azure AI Search Index
+## Demo Path: Managed File Search
 
-For the working demo, use an Azure AI Search index:
+For the working demo, use the managed Foundry File Search index:
 
 ```text
-airreview_knowledge_index
+Name: airreview_knowledge_index
+Type: ManagedAzureSearch
+Vector store ID: vs_v06qsV2mw5yTv2OC6sLddzIF
 ```
 
-Attach it to Foundry agents through the native Azure AI Search / file search tool.
+Attach it to the Codebase Context Agent through the native File Search tool.
 
 AirReview expects these values when syncing agents:
 
 ```bash
-AIRREVIEW_SEARCH_CONNECTION_NAME=airreview-search
-AIRREVIEW_SEARCH_INDEX_NAME=airreview_knowledge_index
-```
-
-If your project connection is known by ID rather than name, set:
-
-```bash
-AIRREVIEW_SEARCH_PROJECT_CONNECTION_ID=/subscriptions/.../projects/airreview/connections/airreview-search
+AIRREVIEW_FILE_SEARCH_VECTOR_STORE_ID=vs_v06qsV2mw5yTv2OC6sLddzIF
 ```
 
 The tool is declared in:
@@ -38,11 +33,11 @@ The tool is declared in:
 foundry/tools.yaml
 ```
 
-Agents using the index:
+Agents using the vector store:
 
 - `airreview-codebase-context-agent`
-- `airreview-branch-review-agent`
-- `airreview-fix-suggestion-agent`
+
+The Branch Review and Fix Suggestion agents consume the retrieved standards via the orchestrated `codebase_context`. They do not get File Search directly because some Foundry agent/model combinations do not support the tool.
 
 ## Recommended Upload Documents
 
@@ -64,5 +59,4 @@ That folder is ignored by Git because it contains local upload artifacts and pub
 
 ## Future Path: Foundry IQ
 
-Foundry IQ remains a valid enterprise target for shared knowledge bases. For this demo, Azure AI Search direct tooling is simpler and easier to keep versioned through AirReview agent manifests.
-
+Foundry IQ remains a valid enterprise target for shared knowledge bases. For this demo, managed File Search is simpler and easier to keep versioned through AirReview agent manifests.

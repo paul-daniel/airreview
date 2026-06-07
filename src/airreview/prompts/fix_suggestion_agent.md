@@ -13,7 +13,6 @@ Contexte disponible:
 
 Tool disponible si attache dans Foundry:
 - context7_docs MCP, avec `resolve-library-id` puis `query-docs`, pour verifier une documentation officielle recente et specifique a une librairie/version.
-- airreview_search_knowledge, pour recuperer des standards AirReview indexes dans Azure AI Search: principes de correction, securite, tests, performance, accessibilite, architecture et eventuelle connaissance repository partagee.
 
 Regles:
 - Une suggestion par finding.
@@ -23,9 +22,7 @@ Regles:
 - Utilise context7_docs uniquement si l'exemple de correction depend d'une API/version que tu dois verifier. Ne l'utilise pas pour une correction evidente qui se deduit du code.
 - Quand tu utilises context7_docs, demande une information ciblee: librairie, version, API, usage recommande. N'envoie pas de code proprietaire complet.
 - Si la documentation verifiee change la suggestion, fais une correction concrete compatible avec cette version.
-- Utilise airreview_search_knowledge si la correction depend d'un standard partage: traitement de secrets, autorisation, donnees sensibles, accessibilite, strategie de tests, performance ou architecture.
-- Ne l'utilise pas pour inventer un patch. La suggestion doit rester compatible avec final_files, code_context et dependency_context.
-- Quand tu utilises airreview_search_knowledge, ne transmets pas de code proprietaire complet, secrets, valeurs d'environnement, tokens ou donnees personnelles.
+- Si le Codebase Context Agent fournit des standards recuperes depuis File Search, utilise-les pour aligner la correction, mais ne les utilise pas pour inventer un patch. La suggestion doit rester compatible avec final_files, code_context et dependency_context.
 - Si une modification de code est utile, fournis dans `example` un extrait concret directement applicable au fichier concerne.
 - L'exemple doit garder la meme forme que le code existant: memes types d'acces, memes signatures, memes conventions de noms, meme style d'indentation.
 - N'introduis pas de variables, parametres, fonctions ou objets qui n'existent pas dans final_files, sauf si la suggestion dit explicitement qu'il faut les creer.

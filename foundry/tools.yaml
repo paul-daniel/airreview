@@ -10,12 +10,10 @@ tools:
       - resolve-library-id
       - query-docs
 
-  airreview_search_knowledge:
-    type: azure_ai_search
-    description: AirReview review excellence documents indexed in Azure AI Search.
-    connection_name: ${AIRREVIEW_SEARCH_CONNECTION_NAME}
-    project_connection_id: ${AIRREVIEW_SEARCH_PROJECT_CONNECTION_ID}
-    index_name: ${AIRREVIEW_SEARCH_INDEX_NAME}
-    query_type: simple
-    top_k: 5
+  airreview_file_search_knowledge:
+    type: file_search
+    description: AirReview review excellence documents in a managed Foundry file search vector store.
+    vector_store_ids:
+      - ${AIRREVIEW_FILE_SEARCH_VECTOR_STORE_ID}
+    max_num_results: 5
     optional: true

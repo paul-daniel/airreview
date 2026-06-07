@@ -80,14 +80,20 @@ Use Context7 for documentation-sensitive decisions only:
 
 Do not use it for obvious diff-local findings such as hardcoded secrets, removed tests, missing cleanup, or fail-open authorization.
 
-## Azure AI Search knowledge tool
+## Managed File Search knowledge tool
 
-For the working demo, AirReview uses a native Azure AI Search tool attached to Foundry prompt agents. This avoids portal drift around manually attached knowledge bases while still showing grounded retrieval through Foundry tools.
-
-The expected index is:
+For the working demo, AirReview uses a managed Foundry File Search vector store attached to the Codebase Context Agent. This matches the index created from the Foundry portal:
 
 ```text
-airreview_knowledge_index
+Name: airreview_knowledge_index
+Type: ManagedAzureSearch
+Vector store ID: vs_v06qsV2mw5yTv2OC6sLddzIF
+```
+
+Set the vector store ID before syncing agents:
+
+```text
+AIRREVIEW_FILE_SEARCH_VECTOR_STORE_ID=vs_v06qsV2mw5yTv2OC6sLddzIF
 ```
 
 AirReview declares this tool in:
@@ -96,19 +102,9 @@ AirReview declares this tool in:
 foundry/tools.yaml
 ```
 
-The tool is optional. If these values are missing, `airreview foundry sync-agents` skips the search tool and keeps the agents usable:
+The tool is optional. If this value is missing, `airreview foundry sync-agents` skips the File Search tool and keeps the agents usable.
 
-```bash
-export AIRREVIEW_SEARCH_CONNECTION_NAME="airreview-search"
-export AIRREVIEW_SEARCH_INDEX_NAME="airreview_knowledge_index"
-airreview foundry sync-agents
-```
-
-If you already have a project connection ID instead of a connection name, set:
-
-```bash
-export AIRREVIEW_SEARCH_PROJECT_CONNECTION_ID="/subscriptions/.../projects/airreview/connections/airreview-search"
-```
+Only the Codebase Context Agent uses File Search by default. Some Foundry agent/model combinations do not expose File Search. The downstream Branch Review and Fix Suggestion agents receive the retrieved standards through the orchestrated context instead of calling File Search directly.
 
 The current recommended split is:
 
@@ -116,7 +112,7 @@ The current recommended split is:
 | --- | --- |
 | PR diff, final changed files, working tree state | Runtime prompt context only |
 | Repo-specific guidelines and known smells | Local `.airreview/` now, search-backed later |
-| Stable review standards | Azure AI Search index `airreview_knowledge_index` |
+| Stable review standards | Managed File Search vector store `vs_v06qsV2mw5yTv2OC6sLddzIF` |
 | Review history and dedupe memory | Future PR memory layer, not the search index by default |
 
 ## Foundry IQ target
@@ -153,7 +149,7 @@ These documents give the agents a shared standard that is stronger than “copy 
 ## Which agents use search grounding?
 
 - Codebase Context Agent: retrieves repository/review standards when local guidelines are missing, generated, or incomplete.
-- Branch Review Agent: retrieves standards for security, permissions, accessibility, testing, performance, architecture, and governance-sensitive findings.
-- Fix Suggestion Agent: retrieves correction standards when a fix needs security, testing, accessibility, performance, or architecture guidance.
+- Branch Review Agent: receives the retrieved standards through `codebase_context`.
+- Fix Suggestion Agent: receives the retrieved standards through `codebase_context`.
 
 The Planning Agent keeps Context7 only because it should decide scope cheaply. The Finding Critic Agent has no external tool by default so it stays focused on dedupe and evidence quality.

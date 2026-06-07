@@ -107,6 +107,7 @@ jobs:
           from azure.ai.projects import AIProjectClient
           import azure.ai.projects.models as models
           print("AIProjectClient", AIProjectClient)
+          print("Has FileSearchTool", hasattr(models, "FileSearchTool"))
           print("Has AzureAISearchAgentTool", hasattr(models, "AzureAISearchAgentTool"))
           print("Has AzureAISearchTool", hasattr(models, "AzureAISearchTool"))
           PY
@@ -121,9 +122,7 @@ jobs:
         env:
           FOUNDRY_PROJECT_ENDPOINT: ${{ vars.FOUNDRY_PROJECT_ENDPOINT }}
           AIRREVIEW_CONTEXT7_CONNECTION_ID: ${{ vars.AIRREVIEW_CONTEXT7_CONNECTION_ID }}
-          AIRREVIEW_SEARCH_CONNECTION_NAME: ${{ vars.AIRREVIEW_SEARCH_CONNECTION_NAME }}
-          AIRREVIEW_SEARCH_PROJECT_CONNECTION_ID: ${{ vars.AIRREVIEW_SEARCH_PROJECT_CONNECTION_ID }}
-          AIRREVIEW_SEARCH_INDEX_NAME: ${{ vars.AIRREVIEW_SEARCH_INDEX_NAME }}
+          AIRREVIEW_FILE_SEARCH_VECTOR_STORE_ID: ${{ vars.AIRREVIEW_FILE_SEARCH_VECTOR_STORE_ID }}
         run: airreview foundry sync-agents --output-json foundry-agent-sync.json
 
       - name: Export synced agent refs

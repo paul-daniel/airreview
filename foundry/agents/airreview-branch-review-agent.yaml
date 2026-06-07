@@ -4,4 +4,3 @@ model_key: branch_review
 prompt_file: src/airreview/prompts/branch_review_agent.md
 tools:
   - context7_docs
-  - airreview_search_knowledge
