@@ -33,11 +33,17 @@ class ModelDeploymentManifest:
 class ToolManifest:
     key: str
     type: str
+    description: str
     server_label: str
     server_url: str
     require_approval: str
     project_connection_id: str
+    connection_name: str
     allowed_tools: tuple[str, ...]
+    index_name: str = ""
+    query_type: str = "simple"
+    top_k: int = 5
+    filter: str = ""
     optional: bool = False
 
 
@@ -119,6 +125,10 @@ def sync_agents(repo: Path, dry_run: bool = False) -> list[dict[str, Any]]:
         raise RuntimeError("Set FOUNDRY_PROJECT_ENDPOINT or AZURE_AI_PROJECT_ENDPOINT before syncing Foundry agents.")
     try:
         from azure.ai.projects import AIProjectClient
+        from azure.ai.projects.models import AISearchIndexResource
+        from azure.ai.projects.models import AzureAISearchAgentTool
+        from azure.ai.projects.models import AzureAISearchQueryType
+        from azure.ai.projects.models import AzureAISearchToolResource
         from azure.ai.projects.models import MCPTool
         from azure.ai.projects.models import PromptAgentDefinition
         from azure.identity import DefaultAzureCredential
@@ -131,7 +141,16 @@ def sync_agents(repo: Path, dry_run: bool = False) -> list[dict[str, Any]]:
         with AIProjectClient(endpoint=endpoint, credential=credential) as project_client:
             for manifest in manifests:
                 instructions = manifest.prompt_file.read_text(encoding="utf-8")
-                tools = build_foundry_tools(MCPTool, manifest, tool_manifests)
+                tools = build_foundry_tools(
+                    MCPTool,
+                    manifest,
+                    tool_manifests,
+                    azure_ai_search_tool_cls=AzureAISearchAgentTool,
+                    azure_ai_search_resource_cls=AzureAISearchToolResource,
+                    ai_search_index_resource_cls=AISearchIndexResource,
+                    query_type_cls=AzureAISearchQueryType,
+                    connection_resolver=lambda name: project_client.connections.get(connection_name=name).id,
+                )
                 agent = project_client.agents.create_version(
                     agent_name=manifest.name,
                     definition=PromptAgentDefinition(
@@ -225,29 +244,70 @@ def load_tool_manifests(repo: Path, optional: bool = False) -> list[ToolManifest
             ToolManifest(
                 key=str(key),
                 type=str(value.get("type") or "mcp"),
+                description=str(value.get("description") or ""),
                 server_label=str(value.get("server_label") or key),
                 server_url=expand_env(str(value.get("server_url") or "")),
                 require_approval=str(value.get("require_approval") or "never"),
                 project_connection_id=expand_env(str(value.get("project_connection_id") or "")),
+                connection_name=expand_env(str(value.get("connection_name") or "")),
                 allowed_tools=tuple(str(tool) for tool in allowed_tools),
+                index_name=expand_env(str(value.get("index_name") or "")),
+                query_type=str(value.get("query_type") or "simple"),
+                top_k=int(value.get("top_k") or 5),
+                filter=str(value.get("filter") or ""),
                 optional=bool(value.get("optional", False)),
             )
         )
     for manifest in manifests:
-        if manifest.type != "mcp":
+        if manifest.type not in {"mcp", "azure_ai_search"}:
             raise RuntimeError(f"Unsupported Foundry tool type `{manifest.type}` for `{manifest.key}`.")
-        if not manifest.server_url and not manifest.optional:
+        if manifest.type == "mcp" and not manifest.server_url and not manifest.optional:
             raise RuntimeError(f"Tool manifest `{manifest.key}` needs server_url.")
+        if manifest.type == "azure_ai_search" and not manifest.index_name and not manifest.optional:
+            raise RuntimeError(f"Tool manifest `{manifest.key}` needs index_name.")
+        if (
+            manifest.type == "azure_ai_search"
+            and not manifest.project_connection_id
+            and not manifest.connection_name
+            and not manifest.optional
+        ):
+            raise RuntimeError(f"Tool manifest `{manifest.key}` needs project_connection_id or connection_name.")
     return manifests
 
 
-def build_foundry_tools(mcp_tool_cls: Any, agent: AgentManifest, tools_by_key: dict[str, ToolManifest]) -> list[Any]:
+def build_foundry_tools(
+    mcp_tool_cls: Any,
+    agent: AgentManifest,
+    tools_by_key: dict[str, ToolManifest],
+    *,
+    azure_ai_search_tool_cls: Any | None = None,
+    azure_ai_search_resource_cls: Any | None = None,
+    ai_search_index_resource_cls: Any | None = None,
+    query_type_cls: Any | None = None,
+    connection_resolver: Any | None = None,
+) -> list[Any]:
     foundry_tools: list[Any] = []
     for key in agent.tools:
         manifest = tools_by_key.get(key)
         if not manifest:
             raise RuntimeError(f"Agent `{agent.name}` references unknown Foundry tool `{key}`.")
-        if manifest.optional and (not manifest.server_url or not manifest.project_connection_id):
+        if manifest.type == "mcp" and manifest.optional and (not manifest.server_url or not manifest.project_connection_id):
+            continue
+        if manifest.type == "azure_ai_search" and manifest.optional and (
+            not manifest.index_name or (not manifest.project_connection_id and not manifest.connection_name)
+        ):
+            continue
+        if manifest.type == "azure_ai_search":
+            foundry_tools.append(
+                build_azure_ai_search_tool(
+                    manifest,
+                    azure_ai_search_tool_cls=azure_ai_search_tool_cls,
+                    azure_ai_search_resource_cls=azure_ai_search_resource_cls,
+                    ai_search_index_resource_cls=ai_search_index_resource_cls,
+                    query_type_cls=query_type_cls,
+                    connection_resolver=connection_resolver,
+                )
+            )
             continue
         kwargs: dict[str, Any] = {
             "server_label": manifest.server_label,
@@ -266,6 +326,46 @@ def build_foundry_tools(mcp_tool_cls: Any, agent: AgentManifest, tools_by_key: d
                 "Upgrade with `pip install --upgrade 'airreview[foundry]'`."
             ) from exc
     return foundry_tools
+
+
+def build_azure_ai_search_tool(
+    manifest: ToolManifest,
+    *,
+    azure_ai_search_tool_cls: Any | None,
+    azure_ai_search_resource_cls: Any | None,
+    ai_search_index_resource_cls: Any | None,
+    query_type_cls: Any | None,
+    connection_resolver: Any | None,
+) -> Any:
+    if not azure_ai_search_tool_cls or not azure_ai_search_resource_cls or not ai_search_index_resource_cls:
+        raise RuntimeError("The installed azure-ai-projects SDK does not expose Azure AI Search agent tools.")
+    connection_id = manifest.project_connection_id
+    if not connection_id and manifest.connection_name:
+        if not connection_resolver:
+            raise RuntimeError(f"Tool manifest `{manifest.key}` needs a project_connection_id in dry construction.")
+        connection_id = str(connection_resolver(manifest.connection_name))
+    if not connection_id:
+        raise RuntimeError(f"Tool manifest `{manifest.key}` needs project_connection_id or connection_name.")
+    query_type: Any = manifest.query_type
+    if query_type_cls:
+        query_type = getattr(query_type_cls, manifest.query_type.upper(), manifest.query_type)
+    index_kwargs: dict[str, Any] = {
+        "project_connection_id": connection_id,
+        "index_name": manifest.index_name,
+        "query_type": query_type,
+        "top_k": manifest.top_k,
+    }
+    if manifest.filter:
+        index_kwargs["filter"] = manifest.filter
+    try:
+        index = ai_search_index_resource_cls(**index_kwargs)
+        resource = azure_ai_search_resource_cls(indexes=[index])
+        return azure_ai_search_tool_cls(azure_ai_search=resource)
+    except TypeError as exc:
+        raise RuntimeError(
+            f"The installed azure-ai-projects SDK does not support the Azure AI Search tool fields used by `{manifest.key}`. "
+            "Upgrade with `pip install --upgrade 'airreview[foundry]'`."
+        ) from exc
 
 
 def load_model_manifests(repo: Path, optional: bool = False) -> list[ModelDeploymentManifest]:

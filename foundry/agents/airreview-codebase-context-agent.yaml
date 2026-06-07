@@ -3,4 +3,4 @@ description: Extracts repository-specific review context from AirReview knowledg
 model_key: codebase_context
 prompt_file: src/airreview/prompts/codebase_context_agent.md
 tools:
-  - foundry_iq_review_knowledge
+  - airreview_search_knowledge

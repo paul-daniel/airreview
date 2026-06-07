@@ -1,54 +1,68 @@
-# AirReview Foundry IQ Knowledge
+# AirReview Knowledge
 
-This folder contains versioned knowledge that can be synced into Foundry IQ / Azure AI Search.
+This folder contains versioned knowledge sources for AirReview grounding.
 
 Use two source groups:
 
 - `review_excellence/`: stable review standards used across repositories.
 - `repository_knowledge/`: templates and generated repository-specific summaries.
 
-Do not place secrets, private code dumps, or full proprietary source trees here. The PR diff remains runtime context. Foundry IQ should contain stable guidance that multiple agents can retrieve when needed.
+Do not place secrets, private code dumps, or full proprietary source trees here. The PR diff remains runtime context. The search index should contain stable guidance that multiple agents can retrieve when needed.
 
-## Target Foundry IQ Sources
+## Demo Path: Azure AI Search Index
 
-Suggested knowledge source names:
-
-- `airreview-review-excellence`
-- `airreview-repository-knowledge`
-
-Suggested knowledge base name:
-
-- `airreview-knowledge`
-
-The resulting Azure AI Search MCP endpoint should look like:
+For the working demo, use an Azure AI Search index:
 
 ```text
-https://<search-service>.search.windows.net/knowledgebases/airreview-knowledge/mcp?api-version=2026-05-01-preview
+airreview_knowledge_index
 ```
 
-Set these variables before `airreview foundry sync-agents` if you want agents to include the Foundry IQ MCP tool:
+Attach it to Foundry agents through the native Azure AI Search / file search tool.
+
+AirReview expects these values when syncing agents:
 
 ```bash
-AIRREVIEW_FOUNDRY_IQ_MCP_ENDPOINT=https://<search-service>.search.windows.net/knowledgebases/airreview-knowledge/mcp?api-version=2026-05-01-preview
-AIRREVIEW_FOUNDRY_IQ_CONNECTION_ID=<project-connection-name-or-id>
+AIRREVIEW_SEARCH_CONNECTION_NAME=airreview-search
+AIRREVIEW_SEARCH_INDEX_NAME=airreview_knowledge_index
 ```
 
-## Portal setup checklist
+If your project connection is known by ID rather than name, set:
 
-1. Create or reuse an Azure AI Search service.
-2. Create a knowledge base, for example `airreview-knowledge`.
-3. Add knowledge sources for `review_excellence/` and, later, repository-specific guidelines.
-4. In the Microsoft Foundry project, create a RemoteTool project connection that targets:
+```bash
+AIRREVIEW_SEARCH_PROJECT_CONNECTION_ID=/subscriptions/.../projects/airreview/connections/airreview-search
+```
+
+The tool is declared in:
 
 ```text
-https://<search-service>.search.windows.net/knowledgebases/airreview-knowledge/mcp?api-version=2026-05-01-preview
+foundry/tools.yaml
 ```
 
-5. Grant the Foundry project managed identity read access to Azure AI Search, typically `Search Index Data Reader`.
-6. Use `ProjectManagedIdentity` authentication for production-style demos when possible. Key-based auth is acceptable only for a quick controlled demo.
+Agents using the index:
 
-Microsoft documents this integration as a Foundry Agent Service MCP connection to an Azure AI Search knowledge base. The exposed MCP tool is currently:
+- `airreview-codebase-context-agent`
+- `airreview-branch-review-agent`
+- `airreview-fix-suggestion-agent`
+
+## Recommended Upload Documents
+
+Upload compact AirReview-owned documents first:
+
+- `review_excellence/code_review_principles.md`
+- `review_excellence/security_review.md`
+- `review_excellence/testing_review.md`
+- `review_excellence/performance_review.md`
+- `review_excellence/accessibility_review.md`
+
+For a richer demo, also upload the local document pack generated in:
 
 ```text
-knowledge_base_retrieve
+foundry/knowledge/document_upload/
 ```
+
+That folder is ignored by Git because it contains local upload artifacts and public external PDFs.
+
+## Future Path: Foundry IQ
+
+Foundry IQ remains a valid enterprise target for shared knowledge bases. For this demo, Azure AI Search direct tooling is simpler and easier to keep versioned through AirReview agent manifests.
+

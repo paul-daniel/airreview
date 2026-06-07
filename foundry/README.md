@@ -80,9 +80,48 @@ Use Context7 for documentation-sensitive decisions only:
 
 Do not use it for obvious diff-local findings such as hardcoded secrets, removed tests, missing cleanup, or fail-open authorization.
 
+## Azure AI Search knowledge tool
+
+For the working demo, AirReview uses a native Azure AI Search tool attached to Foundry prompt agents. This avoids portal drift around manually attached knowledge bases while still showing grounded retrieval through Foundry tools.
+
+The expected index is:
+
+```text
+airreview_knowledge_index
+```
+
+AirReview declares this tool in:
+
+```text
+foundry/tools.yaml
+```
+
+The tool is optional. If these values are missing, `airreview foundry sync-agents` skips the search tool and keeps the agents usable:
+
+```bash
+export AIRREVIEW_SEARCH_CONNECTION_NAME="airreview-search"
+export AIRREVIEW_SEARCH_INDEX_NAME="airreview_knowledge_index"
+airreview foundry sync-agents
+```
+
+If you already have a project connection ID instead of a connection name, set:
+
+```bash
+export AIRREVIEW_SEARCH_PROJECT_CONNECTION_ID="/subscriptions/.../projects/airreview/connections/airreview-search"
+```
+
+The current recommended split is:
+
+| Knowledge | Storage |
+| --- | --- |
+| PR diff, final changed files, working tree state | Runtime prompt context only |
+| Repo-specific guidelines and known smells | Local `.airreview/` now, search-backed later |
+| Stable review standards | Azure AI Search index `airreview_knowledge_index` |
+| Review history and dedupe memory | Future PR memory layer, not the search index by default |
+
 ## Foundry IQ target
 
-`foundry/knowledge.yaml` describes the intended enterprise knowledge layer. The PR diff remains runtime context, while stable repository knowledge can move to Foundry IQ:
+`foundry/knowledge.yaml` describes the longer-term enterprise knowledge layer. The PR diff remains runtime context, while stable repository knowledge can move to Foundry IQ or Azure AI Search:
 
 - review excellence standards;
 - codebase guidelines;
@@ -93,33 +132,6 @@ Do not use it for obvious diff-local findings such as hardcoded secrets, removed
 
 The current CLI keeps `LocalKnowledgeProvider` as a fallback so PR review stays reliable even when Foundry IQ bootstrap is not configured.
 
-## Foundry IQ MCP tool
-
-AirReview also declares an optional Foundry IQ MCP tool in:
-
-```text
-foundry/tools.yaml
-```
-
-When the following values are present, `airreview foundry sync-agents` attaches the tool to the agents that can benefit from shared knowledge:
-
-```bash
-export AIRREVIEW_FOUNDRY_IQ_MCP_ENDPOINT="https://<search-service>.search.windows.net/knowledgebases/airreview-knowledge/mcp?api-version=2026-05-01-preview"
-export AIRREVIEW_FOUNDRY_IQ_CONNECTION_ID="/subscriptions/.../projects/airreview/connections/<foundry-iq-or-search-connection>"
-airreview foundry sync-agents
-```
-
-If these values are missing, the tool is skipped. This is intentional: local reviews and GitHub PR reviews must keep working while Foundry IQ is being prepared.
-
-The current recommended split is:
-
-| Knowledge | Storage |
-| --- | --- |
-| PR diff, final changed files, working tree state | Runtime prompt context only |
-| Repo-specific guidelines and known smells | Local `.airreview/` now, Foundry IQ later |
-| Stable review standards | `foundry/knowledge/review_excellence/`, indexed in Foundry IQ |
-| Review history and dedupe memory | Future PR memory layer, not Foundry IQ by default |
-
 ## Review excellence knowledge
 
 Versioned source documents live in:
@@ -128,7 +140,7 @@ Versioned source documents live in:
 foundry/knowledge/review_excellence/
 ```
 
-They are intentionally short, original, and demo-friendly. Upload or sync them into your Foundry IQ knowledge base named, for example, `airreview-knowledge`:
+They are intentionally short, original, and demo-friendly. Upload or sync them into `airreview_knowledge_index`:
 
 - `code_review_principles.md`
 - `security_review.md`
@@ -138,7 +150,7 @@ They are intentionally short, original, and demo-friendly. Upload or sync them i
 
 These documents give the agents a shared standard that is stronger than “copy whatever the repo already does”. The repo conventions still matter, but objectively bad conventions should be challenged when they conflict with security, correctness, accessibility, maintainability, or package documentation.
 
-## Which agents use Foundry IQ?
+## Which agents use search grounding?
 
 - Codebase Context Agent: retrieves repository/review standards when local guidelines are missing, generated, or incomplete.
 - Branch Review Agent: retrieves standards for security, permissions, accessibility, testing, performance, architecture, and governance-sensitive findings.
