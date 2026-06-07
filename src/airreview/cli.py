@@ -107,6 +107,8 @@ def build_parser(raw_args: list[str]) -> argparse.ArgumentParser:
     parser.add_argument("--post-github", action="store_true", help="Post GitHub PR review comments, inline when possible.")
     parser.add_argument("--dry-run", action="store_true", help="Do not post to Azure DevOps; record intent only.")
     parser.add_argument("--fail-on", choices=["low", "medium", "high", "critical"], default=None, help="Exit non-zero when findings at this severity or higher exist.")
+    parser.add_argument("--verbose", action="store_true", help="Show more progress details while AirReview runs.")
+    parser.add_argument("--quiet", action="store_true", help="Hide progress timeline and only render final output.")
     return parser
 
 
@@ -316,6 +318,8 @@ def cmd_review(repo: Path, args: argparse.Namespace) -> int:
             post_github=args.post_github,
             dry_run=args.dry_run,
             fail_on=args.fail_on,
+            verbose=args.verbose,
+            quiet=args.quiet,
         )
     )
     render_repository(output.branch_context)

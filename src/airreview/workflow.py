@@ -38,6 +38,8 @@ class RunOptions:
     post_github: bool = False
     dry_run: bool = False
     fail_on: str | None = None
+    verbose: bool = False
+    quiet: bool = False
 
 
 @dataclass
@@ -58,11 +60,18 @@ class AirReviewWorkflow:
         self.trace = trace
         self.tools = ToolRegistry(trace)
         self.console = Console()
+        self.verbose = False
+        self.quiet = False
 
     def run(self, options: RunOptions) -> WorkflowOutput:
+        self.verbose = options.verbose
+        self.quiet = options.quiet
         if options.fetch:
+            self._progress("Fetching remotes before review")
             with self.console.status("[cyan]Fetching remotes...[/cyan]", spinner="dots"):
                 self.tools.call("git.fetch", fetch, self.repo)
+            self._progress("Remotes fetched")
+        self._progress("Collecting Git branch context")
         with self.console.status("[cyan]Collecting branch context...[/cyan]", spinner="dots"):
             branch_context = self.tools.call(
                 "git.branch_context",
@@ -72,10 +81,18 @@ class AirReviewWorkflow:
                 options.base,
                 options.scope,
             )
+        self._progress(
+            f"Branch context ready: {branch_context.branch} -> {branch_context.base}, "
+            f"{len(branch_context.changed_files)} changed file(s)"
+        )
+        self._progress(f"Merge-base: {branch_context.merge_base}", detail=True)
+        self._progress(f"Diff size: {len(branch_context.diff):,} chars", detail=True)
         self.trace.branch = branch_context.branch
         self.trace.base = branch_context.base
         self.trace.model = self.model_client.model_name
         previous_review = load_previous_review(self.repo, branch_context.branch)
+        if previous_review:
+            self._progress("Previous AirReview result found for comparison")
 
         if not branch_context.changed_files:
             knowledge = KnowledgeBundle("", "", "", {"provider": "local", "skipped": True})
@@ -95,15 +112,22 @@ class AirReviewWorkflow:
             return WorkflowOutput(branch_context, knowledge, result, markdown_path, trace_path, should_fail=False)
 
         provider = LocalKnowledgeProvider(self.repo)
+        self._progress("Loading local AirReview knowledge")
         with self.console.status("[cyan]Checking local knowledge...[/cyan]", spinner="dots"):
             status = self.tools.call("knowledge_status", provider.status)
             if not status.exists:
+                self._progress("Local knowledge missing; bootstrapping repository scan")
                 status = self.tools.call("knowledge_bootstrap", provider.bootstrap)
             knowledge = self.tools.call("knowledge_load", provider.load)
+        self._progress(
+            f"Knowledge ready: {status.scanned_files} scanned file(s), "
+            f"{', '.join(status.languages) or 'unknown language'}"
+        )
         self.tools.call("review_profile_load", lambda: self.profile.raw)
         self.tools.call("azure_devops.context", pr_context)
         self.tools.call("github.context", github_context)
         dependency_context = self.tools.call("dependency_context.scan", scan_dependency_context, self.repo)
+        self._progress(dependency_summary(dependency_context), detail=True)
 
         planner_agent = JsonAgent("Review Planning Agent", "review_planning_agent.md", self.model_client)
         context_agent = JsonAgent("Codebase Context Agent", "codebase_context_agent.md", self.model_client)
@@ -133,17 +157,29 @@ class AirReviewWorkflow:
                 "final_file_count": len(branch_context.final_files),
             },
         )
+        chunks = normalize_chunks(plan_json, branch_context.changed_files)
+        self._progress(
+            f"Review plan: {plan_json.get('strategy', 'single_pass')} with {len(chunks)} chunk(s)"
+        )
+        budget = plan_json.get("budget", {})
+        if isinstance(budget, dict) and budget.get("budget_exceeded"):
+            self._progress("Review budget exceeded; remaining files will be skipped or capped by profile")
         codebase_context = self._run_agent(context_agent, context_payload)
+        focus_count = len(codebase_context.get("review_focus", [])) if isinstance(codebase_context.get("review_focus"), list) else 0
+        self._progress(f"Codebase context ready: {focus_count} review focus item(s)", detail=True)
         review_summaries: list[str] = []
         findings = []
-        chunks = normalize_chunks(plan_json, branch_context.changed_files)
         if self.profile.stop_when_budget_exceeded and plan_json.get("budget", {}).get("budget_exceeded"):
             chunks = chunks[: self.profile.max_chunks]
-        for chunk in chunks:
+        for index, chunk in enumerate(chunks, start=1):
             files = [path for path in chunk.get("files", []) if path in branch_context.changed_files]
             if not files:
                 continue
-            self.console.print(f"[cyan]Reviewing {chunk.get('name', 'chunk')}[/cyan]: {', '.join(files[:8])}")
+            chunk_name = str(chunk.get("name", f"chunk-{index}"))
+            self._progress(
+                f"Reviewing {chunk_name} ({index}/{len(chunks)}): {', '.join(files[:8])}"
+                + ("..." if len(files) > 8 else "")
+            )
             review_payload = {
                 **context_payload,
                 "review_plan": plan_json,
@@ -153,10 +189,18 @@ class AirReviewWorkflow:
                 "final_files": {path: branch_context.final_files.get(path, "") for path in files},
                 "codebase_context": codebase_context,
             }
+            self._progress(
+                f"{chunk_name} context: {len(review_payload['diff']):,} diff chars, "
+                f"{len(review_payload['final_files'])} final file(s)",
+                detail=True,
+            )
             review_json = self._run_agent(review_agent, review_payload)
             review_summaries.append(str(review_json.get("summary", "")))
-            findings.extend(findings_from_json(review_json))
+            chunk_findings = findings_from_json(review_json)
+            findings.extend(chunk_findings)
+            self._progress(f"{chunk_name} produced {len(chunk_findings)} candidate finding(s)")
         findings = dedupe_findings(findings)
+        self._progress(f"Candidate findings after de-duplication: {len(findings)}")
         critic_json = self._run_agent(
             critic_agent,
             {
@@ -167,16 +211,27 @@ class AirReviewWorkflow:
             },
         )
         findings = findings_from_json(critic_json)
+        rejected = critic_json.get("rejected_findings", [])
+        rejected_count = len(rejected) if isinstance(rejected, list) else 0
+        self._progress(f"Finding critic accepted {len(findings)} finding(s), rejected {rejected_count}")
         findings = apply_threshold(
             findings,
             self.profile.severity_threshold,
             self.profile.max_findings,
             self.profile.ignore_low_confidence,
         )
+        self._progress(f"Findings after profile threshold: {len(findings)}")
         history = compare_findings(previous_review, findings)
+        if history.get("previous_run"):
+            self._progress(
+                f"Previous review comparison: {len(history.get('new', []))} new, "
+                f"{len(history.get('still_present', []))} still present, "
+                f"{len(history.get('resolved', []))} resolved"
+            )
         line_snippets = build_line_snippets(findings, branch_context.final_files)
         if findings:
             finding_files = sorted({finding.file for finding in findings if finding.file})
+            self._progress(f"Preparing fix suggestions for {len(findings)} finding(s)")
             fix_json = self._run_agent(
                 fix_agent,
                 {
@@ -203,8 +258,10 @@ class AirReviewWorkflow:
                 },
             )
             suggestions = suggestions_from_json(fix_json)
+            self._progress(f"Fix suggestions ready: {len(suggestions)}")
         else:
             suggestions = []
+            self._progress("No accepted findings; skipping fix suggestion agent")
         result = ReviewResult(
             summary=summarize_review(plan_json, review_summaries, critic_json),
             findings=findings,
@@ -221,9 +278,11 @@ class AirReviewWorkflow:
 
         markdown_path = self._write_outputs_if_requested(branch_context, knowledge, result, options)
         if options.post_ado:
+            self._progress("Posting Azure DevOps PR comment")
             markdown = build_markdown(branch_context, self.profile, knowledge, result, self.trace)
             self.tools.call("azure_devops_post_pr_comment", post_pr_comment, markdown, options.dry_run)
         if options.post_github:
+            self._progress("Posting GitHub PR comments")
             markdown = build_markdown(branch_context, self.profile, knowledge, result, self.trace)
             self.tools.call(
                 "github_post_review_comments",
@@ -235,6 +294,7 @@ class AirReviewWorkflow:
                 options.dry_run,
             )
         trace_path = self.trace.write()
+        self._progress(f"Trace written: {trace_path}", detail=True)
         return WorkflowOutput(branch_context, knowledge, result, markdown_path, trace_path, should_fail=should_fail(result, options.fail_on))
 
     def _write_outputs_if_requested(
@@ -248,8 +308,10 @@ class AirReviewWorkflow:
         markdown = build_markdown(branch_context, self.profile, knowledge, result, self.trace)
         target = output_path_for_branch(self.repo, branch_context.branch, options.output)
         if target:
+            self._progress(f"Writing Markdown report to {target}", detail=True)
             markdown_path = self.tools.call("output.markdown", write_markdown, target, markdown)
             self.trace.output_file = str(markdown_path)
+            self._progress("Saving structured review JSON", detail=True)
             self.tools.call(
                 "output.review_json",
                 save_review_json,
@@ -270,13 +332,24 @@ class AirReviewWorkflow:
     def _run_agent(self, agent: JsonAgent, payload: dict) -> dict:
         start = perf_counter()
         try:
+            self._progress(f"{agent.name} started using {model_for_agent(self.model_client, agent.name)}")
             with self.console.status(f"[cyan]{agent.name}[/cyan]", spinner="dots"):
                 result = agent.run(payload)
-            self.trace.record_agent(agent.name, (perf_counter() - start) * 1000, True)
+            duration_ms = (perf_counter() - start) * 1000
+            self.trace.record_agent(agent.name, duration_ms, True)
+            self._progress(f"{agent.name} completed in {duration_ms:.0f} ms")
             return result
         except Exception:
-            self.trace.record_agent(agent.name, (perf_counter() - start) * 1000, False)
+            duration_ms = (perf_counter() - start) * 1000
+            self.trace.record_agent(agent.name, duration_ms, False)
+            self._progress(f"{agent.name} failed after {duration_ms:.0f} ms")
             raise
+
+    def _progress(self, message: str, detail: bool = False) -> None:
+        if self.quiet or (detail and not self.verbose):
+            return
+        prefix = "[dim]•[/dim]" if detail else "[cyan]→[/cyan]"
+        self.console.print(f"{prefix} {message}")
 
 
 def normalize_chunks(plan: dict, changed_files: list[str]) -> list[dict]:
@@ -322,6 +395,23 @@ def should_fail(result: ReviewResult, fail_on: str | None) -> bool:
     weights = {"low": 1, "medium": 2, "high": 3, "critical": 4}
     minimum = weights.get(fail_on, 2)
     return any(weights.get(finding.severity, 1) >= minimum for finding in result.findings)
+
+
+def model_for_agent(model_client: ModelClient, agent_name: str) -> str:
+    agent_models = getattr(model_client, "agent_models", None)
+    if isinstance(agent_models, dict):
+        return str(agent_models.get(agent_name) or model_client.model_name)
+    return model_client.model_name
+
+
+def dependency_summary(context: dict) -> str:
+    dependencies = context.get("dependencies", {})
+    dev_dependencies = context.get("dev_dependencies", {})
+    total = len(dependencies) + len(dev_dependencies) if isinstance(dependencies, dict) and isinstance(dev_dependencies, dict) else 0
+    manifests = context.get("package_manifests", [])
+    manifest_text = ", ".join(manifests) if isinstance(manifests, list) and manifests else "no dependency manifest"
+    package_manager = context.get("package_manager", "unknown")
+    return f"Dependency context: {total} package(s), {manifest_text}, package manager {package_manager}"
 
 
 def build_line_snippets(findings: list, final_files: dict[str, str], radius: int = 2) -> dict[str, dict]:
