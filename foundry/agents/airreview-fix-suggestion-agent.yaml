@@ -4,3 +4,4 @@ model_key: fix_suggestion
 prompt_file: src/airreview/prompts/fix_suggestion_agent.md
 tools:
   - context7_docs
+  - foundry_iq_review_knowledge

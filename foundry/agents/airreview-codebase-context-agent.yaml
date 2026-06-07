@@ -2,3 +2,5 @@ name: airreview-codebase-context-agent
 description: Extracts repository-specific review context from AirReview knowledge.
 model_key: codebase_context
 prompt_file: src/airreview/prompts/codebase_context_agent.md
+tools:
+  - foundry_iq_review_knowledge

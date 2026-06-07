@@ -38,6 +38,7 @@ class ToolManifest:
     require_approval: str
     project_connection_id: str
     allowed_tools: tuple[str, ...]
+    optional: bool = False
 
 
 def sync_models(repo: Path, dry_run: bool = False, prune: bool = False) -> list[dict[str, Any]]:
@@ -229,12 +230,13 @@ def load_tool_manifests(repo: Path, optional: bool = False) -> list[ToolManifest
                 require_approval=str(value.get("require_approval") or "never"),
                 project_connection_id=expand_env(str(value.get("project_connection_id") or "")),
                 allowed_tools=tuple(str(tool) for tool in allowed_tools),
+                optional=bool(value.get("optional", False)),
             )
         )
     for manifest in manifests:
         if manifest.type != "mcp":
             raise RuntimeError(f"Unsupported Foundry tool type `{manifest.type}` for `{manifest.key}`.")
-        if not manifest.server_url:
+        if not manifest.server_url and not manifest.optional:
             raise RuntimeError(f"Tool manifest `{manifest.key}` needs server_url.")
     return manifests
 
@@ -245,6 +247,8 @@ def build_foundry_tools(mcp_tool_cls: Any, agent: AgentManifest, tools_by_key: d
         manifest = tools_by_key.get(key)
         if not manifest:
             raise RuntimeError(f"Agent `{agent.name}` references unknown Foundry tool `{key}`.")
+        if manifest.optional and (not manifest.server_url or not manifest.project_connection_id):
+            continue
         kwargs: dict[str, Any] = {
             "server_label": manifest.server_label,
             "server_url": manifest.server_url,

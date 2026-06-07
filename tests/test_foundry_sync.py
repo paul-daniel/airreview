@@ -31,9 +31,15 @@ def test_load_foundry_agent_manifests() -> None:
     }
     tools_by_agent = {manifest.name: manifest.tools for manifest in manifests}
     assert tools_by_agent["airreview-planning-agent"] == ("context7_docs",)
-    assert tools_by_agent["airreview-branch-review-agent"] == ("context7_docs",)
-    assert tools_by_agent["airreview-fix-suggestion-agent"] == ("context7_docs",)
-    assert tools_by_agent["airreview-codebase-context-agent"] == ()
+    assert tools_by_agent["airreview-branch-review-agent"] == (
+        "context7_docs",
+        "foundry_iq_review_knowledge",
+    )
+    assert tools_by_agent["airreview-fix-suggestion-agent"] == (
+        "context7_docs",
+        "foundry_iq_review_knowledge",
+    )
+    assert tools_by_agent["airreview-codebase-context-agent"] == ("foundry_iq_review_knowledge",)
     assert tools_by_agent["airreview-finding-critic-agent"] == ()
 
 
@@ -42,10 +48,15 @@ def test_load_foundry_tool_manifests(monkeypatch) -> None:
     connection_id = "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.CognitiveServices/accounts/res/projects/proj/connections/context7"
     monkeypatch.setenv("AIRREVIEW_CONTEXT7_CONNECTION_ID", connection_id)
 
+    iq_endpoint = "https://search.example.net/knowledgebases/airreview-knowledge/mcp?api-version=2026-05-01-preview"
+    iq_connection_id = "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.CognitiveServices/accounts/res/projects/proj/connections/airreview-knowledge"
+    monkeypatch.setenv("AIRREVIEW_FOUNDRY_IQ_MCP_ENDPOINT", iq_endpoint)
+    monkeypatch.setenv("AIRREVIEW_FOUNDRY_IQ_CONNECTION_ID", iq_connection_id)
+
     manifests = load_tool_manifests(repo)
 
-    assert len(manifests) == 1
-    manifest = manifests[0]
+    assert len(manifests) == 2
+    manifest = next(item for item in manifests if item.key == "context7_docs")
     assert manifest.key == "context7_docs"
     assert manifest.type == "mcp"
     assert manifest.server_label == "context7"
@@ -53,6 +64,12 @@ def test_load_foundry_tool_manifests(monkeypatch) -> None:
     assert manifest.project_connection_id == connection_id
     assert manifest.require_approval == "never"
     assert manifest.allowed_tools == ("resolve-library-id", "query-docs")
+    iq_manifest = next(item for item in manifests if item.key == "foundry_iq_review_knowledge")
+    assert iq_manifest.optional is True
+    assert iq_manifest.server_label == "airreview-knowledge"
+    assert iq_manifest.server_url == iq_endpoint
+    assert iq_manifest.project_connection_id == iq_connection_id
+    assert iq_manifest.allowed_tools == ("knowledge_base_retrieve",)
 
 
 def test_load_foundry_model_manifests() -> None:
@@ -76,7 +93,11 @@ def test_sync_agents_dry_run() -> None:
 
     assert len(rows) == 5
     assert all(row["dry_run"] for row in rows)
-    assert any(row["name"] == "airreview-branch-review-agent" and row["tools"] == ["context7_docs"] for row in rows)
+    assert any(
+        row["name"] == "airreview-branch-review-agent"
+        and row["tools"] == ["context7_docs", "foundry_iq_review_knowledge"]
+        for row in rows
+    )
 
 
 def test_sync_models_dry_run() -> None:
@@ -100,6 +121,8 @@ def test_build_foundry_mcp_tool(monkeypatch) -> None:
     repo = Path(__file__).resolve().parents[1]
     connection_id = "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.CognitiveServices/accounts/res/projects/proj/connections/context7"
     monkeypatch.setenv("AIRREVIEW_CONTEXT7_CONNECTION_ID", connection_id)
+    monkeypatch.delenv("AIRREVIEW_FOUNDRY_IQ_MCP_ENDPOINT", raising=False)
+    monkeypatch.delenv("AIRREVIEW_FOUNDRY_IQ_CONNECTION_ID", raising=False)
     agent = next(manifest for manifest in load_agent_manifests(repo) if manifest.name == "airreview-branch-review-agent")
     tools_by_key = {manifest.key: manifest for manifest in load_tool_manifests(repo)}
 
@@ -116,6 +139,45 @@ def test_build_foundry_mcp_tool(monkeypatch) -> None:
         "require_approval": "never",
         "project_connection_id": connection_id,
         "allowed_tools": ["resolve-library-id", "query-docs"],
+    }
+
+
+def test_optional_foundry_iq_tool_is_skipped_without_env(monkeypatch) -> None:
+    repo = Path(__file__).resolve().parents[1]
+    monkeypatch.delenv("AIRREVIEW_FOUNDRY_IQ_MCP_ENDPOINT", raising=False)
+    monkeypatch.delenv("AIRREVIEW_FOUNDRY_IQ_CONNECTION_ID", raising=False)
+    agent = next(manifest for manifest in load_agent_manifests(repo) if manifest.name == "airreview-codebase-context-agent")
+    tools_by_key = {manifest.key: manifest for manifest in load_tool_manifests(repo)}
+
+    class FakeMCPTool:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+    assert build_foundry_tools(FakeMCPTool, agent, tools_by_key) == []
+
+
+def test_optional_foundry_iq_tool_builds_with_env(monkeypatch) -> None:
+    repo = Path(__file__).resolve().parents[1]
+    endpoint = "https://search.example.net/knowledgebases/airreview-knowledge/mcp?api-version=2026-05-01-preview"
+    connection_id = "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.CognitiveServices/accounts/res/projects/proj/connections/airreview-knowledge"
+    monkeypatch.setenv("AIRREVIEW_FOUNDRY_IQ_MCP_ENDPOINT", endpoint)
+    monkeypatch.setenv("AIRREVIEW_FOUNDRY_IQ_CONNECTION_ID", connection_id)
+    agent = next(manifest for manifest in load_agent_manifests(repo) if manifest.name == "airreview-codebase-context-agent")
+    tools_by_key = {manifest.key: manifest for manifest in load_tool_manifests(repo)}
+
+    class FakeMCPTool:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+    tools = build_foundry_tools(FakeMCPTool, agent, tools_by_key)
+
+    assert len(tools) == 1
+    assert tools[0].kwargs == {
+        "server_label": "airreview-knowledge",
+        "server_url": endpoint,
+        "require_approval": "never",
+        "project_connection_id": connection_id,
+        "allowed_tools": ["knowledge_base_retrieve"],
     }
 
 

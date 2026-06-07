@@ -9,3 +9,14 @@ tools:
     allowed_tools:
       - resolve-library-id
       - query-docs
+
+  foundry_iq_review_knowledge:
+    type: mcp
+    description: AirReview review excellence and repository knowledge via Foundry IQ / Azure AI Search agentic retrieval.
+    server_label: airreview-knowledge
+    server_url: ${AIRREVIEW_FOUNDRY_IQ_MCP_ENDPOINT}
+    project_connection_id: ${AIRREVIEW_FOUNDRY_IQ_CONNECTION_ID}
+    require_approval: never
+    optional: true
+    allowed_tools:
+      - knowledge_base_retrieve
