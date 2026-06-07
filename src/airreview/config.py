@@ -176,6 +176,8 @@ def local_env_example() -> str:
             "# FOUNDRY_API_KEY=<optional-api-key>",
             "",
             "# Optional local throttling controls.",
+            "# Local default is AzureCliCredential; CI default is DefaultAzureCredential.",
+            "AIRREVIEW_AZURE_CREDENTIAL=auto",
             "AIRREVIEW_MODEL_RETRIES=4",
             "AIRREVIEW_RATE_LIMIT_BACKOFF_SECONDS=12,30,60,90",
             "AIRREVIEW_MODEL_CALL_DELAY_SECONDS=2",

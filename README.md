@@ -165,6 +165,7 @@ Supported endpoint/model variable aliases:
 
 Optional controls:
 
+- `AIRREVIEW_AZURE_CREDENTIAL=auto` uses Azure CLI locally and DefaultAzureCredential in CI. Use `azure_cli` or `default` to force one path.
 - `AIRREVIEW_MODEL_API=chat` uses chat completions with JSON mode.
 - `AIRREVIEW_MODEL_API=responses` uses the Responses API.
 - `AIRREVIEW_MAX_OUTPUT_TOKENS=3000` caps each agent output.

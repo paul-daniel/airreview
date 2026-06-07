@@ -174,6 +174,7 @@ def cmd_doctor(repo: Path) -> int:
         table.add_row("Foundry model", "agent mode", "Per-agent deployments are configured by AirReview")
     else:
         table.add_row("Foundry model", "ok" if foundry_model else "missing", foundry_model or "Use --mock or set FOUNDRY_MODEL")
+    table.add_row("Azure credential", "ok", _env_any("AIRREVIEW_AZURE_CREDENTIAL") or "auto (Azure CLI locally, DefaultAzureCredential in CI)")
     ado = pr_context()
     table.add_row("Azure DevOps PR", "ok" if ado.is_complete else "optional", "complete" if ado.is_complete else "Only needed for --post-ado")
     gh = github_context()

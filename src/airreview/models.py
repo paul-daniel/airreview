@@ -122,10 +122,7 @@ class FoundryModelClient(ModelClient):
         if self.api_key:
             api_key = self.api_key
         else:
-            from azure.identity import DefaultAzureCredential, get_bearer_token_provider
-
-            token_provider = get_bearer_token_provider(DefaultAzureCredential(), "https://ai.azure.com/.default")
-            api_key = token_provider()
+            api_key = azure_ai_token_provider()
         client = OpenAI(base_url=base_url, api_key=api_key)
         user_content = json.dumps(
             {
@@ -219,10 +216,7 @@ class FoundryAgentClient(ModelClient):
         if self.api_key:
             api_key = self.api_key
         else:
-            from azure.identity import DefaultAzureCredential, get_bearer_token_provider
-
-            token_provider = get_bearer_token_provider(DefaultAzureCredential(), "https://ai.azure.com/.default")
-            api_key = token_provider()
+            api_key = azure_ai_token_provider()
         client = OpenAI(base_url=base_url, api_key=api_key)
         foundry_agent_name = self.agent_names.get(agent_name)
         if not foundry_agent_name:
@@ -265,6 +259,27 @@ def first_env(*names: str, default: str = "") -> str:
         if value:
             return value
     return default
+
+
+def azure_ai_token_provider() -> Any:
+    from azure.identity import AzureCliCredential, DefaultAzureCredential, get_bearer_token_provider
+
+    credential_name = first_env("AIRREVIEW_AZURE_CREDENTIAL", default="auto").strip().lower()
+    if credential_name in {"azure_cli", "az", "cli"}:
+        credential = AzureCliCredential()
+    elif credential_name in {"default", "default_azure_credential"}:
+        credential = DefaultAzureCredential()
+    elif credential_name == "auto":
+        credential = DefaultAzureCredential() if is_ci_environment() else AzureCliCredential()
+    else:
+        raise RuntimeError(
+            "AIRREVIEW_AZURE_CREDENTIAL must be one of auto, azure_cli, or default."
+        )
+    return get_bearer_token_provider(credential, "https://ai.azure.com/.default")
+
+
+def is_ci_environment() -> bool:
+    return any(os.getenv(name) for name in ("CI", "GITHUB_ACTIONS", "TF_BUILD", "BUILD_BUILDID"))
 
 
 class RetryPolicy:
