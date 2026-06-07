@@ -126,14 +126,20 @@ def sync_agents(repo: Path, dry_run: bool = False) -> list[dict[str, Any]]:
     try:
         from azure.ai.projects import AIProjectClient
         from azure.ai.projects.models import AISearchIndexResource
-        from azure.ai.projects.models import AzureAISearchAgentTool
         from azure.ai.projects.models import AzureAISearchQueryType
         from azure.ai.projects.models import AzureAISearchToolResource
         from azure.ai.projects.models import MCPTool
         from azure.ai.projects.models import PromptAgentDefinition
         from azure.identity import DefaultAzureCredential
+        try:
+            from azure.ai.projects.models import AzureAISearchAgentTool as AzureAISearchToolClass
+        except ImportError:
+            from azure.ai.projects.models import AzureAISearchTool as AzureAISearchToolClass
     except ImportError as exc:
-        raise RuntimeError("Install optional Foundry dependencies with `pip install 'airreview[foundry]'`.") from exc
+        raise RuntimeError(
+            "Install optional Foundry dependencies with `pip install 'airreview[foundry]'`. "
+            f"Import error: {exc}"
+        ) from exc
 
     tool_manifests = {manifest.key: manifest for manifest in load_tool_manifests(repo, optional=True)}
     results: list[dict[str, Any]] = []
@@ -145,7 +151,7 @@ def sync_agents(repo: Path, dry_run: bool = False) -> list[dict[str, Any]]:
                     MCPTool,
                     manifest,
                     tool_manifests,
-                    azure_ai_search_tool_cls=AzureAISearchAgentTool,
+                    azure_ai_search_tool_cls=AzureAISearchToolClass,
                     azure_ai_search_resource_cls=AzureAISearchToolResource,
                     ai_search_index_resource_cls=AISearchIndexResource,
                     query_type_cls=AzureAISearchQueryType,
