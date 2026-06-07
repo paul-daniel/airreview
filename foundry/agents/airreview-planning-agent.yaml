@@ -2,5 +2,3 @@ name: airreview-planning-agent
 description: Plans AirReview branch review chunks and token budget.
 model_key: planning
 prompt_file: src/airreview/prompts/review_planning_agent.md
-tools:
-  - context7_docs

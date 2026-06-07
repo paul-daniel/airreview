@@ -30,7 +30,7 @@ def test_load_foundry_agent_manifests() -> None:
         "airreview-fix-codex",
     }
     tools_by_agent = {manifest.name: manifest.tools for manifest in manifests}
-    assert tools_by_agent["airreview-planning-agent"] == ("context7_docs",)
+    assert tools_by_agent["airreview-planning-agent"] == ()
     assert tools_by_agent["airreview-branch-review-agent"] == ("context7_docs",)
     assert tools_by_agent["airreview-fix-suggestion-agent"] == ("context7_docs",)
     assert tools_by_agent["airreview-codebase-context-agent"] == ("airreview_file_search_knowledge",)
