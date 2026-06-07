@@ -155,7 +155,7 @@ def sync_agents(repo: Path, dry_run: bool = False) -> list[dict[str, Any]]:
                     azure_ai_search_resource_cls=AzureAISearchToolResource,
                     ai_search_index_resource_cls=AISearchIndexResource,
                     query_type_cls=AzureAISearchQueryType,
-                    connection_resolver=lambda name: project_client.connections.get(connection_name=name).id,
+                    connection_resolver=lambda name: project_client.connections.get(name=name).id,
                 )
                 agent = project_client.agents.create_version(
                     agent_name=manifest.name,
