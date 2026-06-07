@@ -10,7 +10,7 @@ from rich.prompt import Prompt
 from rich.table import Table
 
 from .azure_devops import pr_context
-from .config import init_files, load_review_profile
+from .config import airreview_path, init_files, load_local_env, load_review_profile
 from .git_tools import collect_branch_context, detect_base, ensure_git_repo, ref_exists
 from .github import github_context, post_review_comments as post_github_review_comments
 from .evals import run_local_evals, write_eval_report
@@ -39,6 +39,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser(raw_args)
     args = parser.parse_args(raw_args)
     repo = Path.cwd()
+    load_local_env(repo)
     command = args.command
     try:
         if command == "init":
@@ -163,8 +164,14 @@ def cmd_doctor(repo: Path) -> int:
         "FOUNDRY_ENDPOINT",
     )
     foundry_model = _env_any("FOUNDRY_MODEL", "AZURE_AI_MODEL_DEPLOYMENT_NAME", "AZURE_AI_MODEL")
+    agent_mode = _env_any("AIRREVIEW_AGENT_MODE")
+    local_env = airreview_path(repo) / ".env"
+    table.add_row("Local env file", "ok" if local_env.exists() else "optional", str(local_env) if local_env.exists() else "Use `.airreview/.env` to avoid shell exports")
     table.add_row("Foundry endpoint", "ok" if foundry_endpoint else "missing", foundry_endpoint or "Use --mock or set .env")
-    table.add_row("Foundry model", "ok" if foundry_model else "missing", foundry_model or "Use --mock or set FOUNDRY_MODEL")
+    if agent_mode == "foundry_agents":
+        table.add_row("Foundry model", "agent mode", "Per-agent deployments are configured by AirReview")
+    else:
+        table.add_row("Foundry model", "ok" if foundry_model else "missing", foundry_model or "Use --mock or set FOUNDRY_MODEL")
     ado = pr_context()
     table.add_row("Azure DevOps PR", "ok" if ado.is_complete else "optional", "complete" if ado.is_complete else "Only needed for --post-ado")
     gh = github_context()
