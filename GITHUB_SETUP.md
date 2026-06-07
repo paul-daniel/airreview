@@ -97,8 +97,10 @@ checkout full history
 fetch base branch and PR head
 install AirReview
 optional Azure OIDC login
-run airreview airreview-pr-head --base origin/<base> --output --post-github --fail-on medium
+run airreview airreview-pr-head --base origin/<base> --output --post-github
 ```
+
+By default, the workflow fails only if AirReview fails. Add `--fail-on medium` deliberately when you want review findings to become a blocking quality gate.
 
 The workflow uses:
 
@@ -116,7 +118,7 @@ one inline GitHub review comment per finding when the finding line is commentabl
 one individual fallback PR conversation comment per finding when GitHub cannot attach the line
 ```
 
-AirReview removes previous comments containing its internal marker before reposting, so reruns do not stack duplicate comments.
+AirReview keeps a hidden memory block in the summary comment. Reruns skip findings that already have a comment, post only new findings, and mark disappeared fingerprints as resolved in memory.
 
 ## 5. Permissions
 

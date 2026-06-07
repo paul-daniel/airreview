@@ -288,7 +288,12 @@ def cmd_github(repo: Path, args: argparse.Namespace) -> int:
     markdown = markdown_path.read_text(encoding="utf-8")
     payload = post_github_review_comments(result, result.suggestions, branch_context.diff, markdown, args.dry_run)
     if payload.get("posted"):
-        ok("GitHub comments posted")
+        ok(
+            "GitHub comments posted "
+            f"({payload.get('new_comments', 0)} new, "
+            f"{payload.get('skipped_existing', 0)} already present, "
+            f"{payload.get('resolved', 0)} resolved)"
+        )
     else:
         ok(
             "GitHub post dry-run: "

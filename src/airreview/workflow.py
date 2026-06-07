@@ -17,9 +17,9 @@ from .agents import (
 from .azure_devops import post_pr_comment, pr_context
 from .config import ReviewProfile
 from .dependencies import scan_dependency_context
-from .git_tools import BranchContext, collect_branch_context, fetch
-from .github import github_context, post_review_comments as post_github_review_comments
-from .history import compare_findings, load_previous_review, save_review_json
+from .git_tools import BranchContext, collect_branch_context, fetch, run_git
+from .github import github_context, load_pr_review_state, post_review_comments as post_github_review_comments
+from .history import compare_findings, default_json_path, diff_hash, load_previous_review, load_review_result, save_review_json
 from .knowledge import KnowledgeBundle, LocalKnowledgeProvider
 from .models import ModelClient
 from .rendering import build_markdown, output_path_for_branch, write_markdown
@@ -90,9 +90,110 @@ class AirReviewWorkflow:
         self.trace.branch = branch_context.branch
         self.trace.base = branch_context.base
         self.trace.model = self.model_client.model_name
+        current_diff_hash = diff_hash(branch_context.diff)
+        current_head_sha = git_head_for_ref(self.repo, branch_context.branch)
         previous_review = load_previous_review(self.repo, branch_context.branch)
+        github_state: dict = {}
+        if options.post_github:
+            self._progress("Checking GitHub PR memory for previous AirReview state")
+            try:
+                github_state = self.tools.call("github_state.load", load_pr_review_state, options.dry_run)
+            except Exception as exc:
+                self._progress(f"GitHub PR memory unavailable before review: {exc}", detail=True)
+            github_previous = previous_review_from_github_state(github_state)
+            if github_previous and not previous_review:
+                previous_review = github_previous
+                self._progress("Previous AirReview state loaded from GitHub PR memory")
         if previous_review:
             self._progress("Previous AirReview result found for comparison")
+            metadata = previous_review.get("metadata", {}) if isinstance(previous_review.get("metadata"), dict) else {}
+            local_review_path = default_json_path(self.repo, branch_context.branch)
+            if metadata.get("diff_hash") == current_diff_hash and local_review_path.exists():
+                self._progress("Diff unchanged since previous AirReview run; reusing cached review result")
+                result = load_review_result(local_review_path)
+                knowledge = KnowledgeBundle("", "", "", {"provider": "local", "cache_hit": True})
+                markdown_path = self._write_outputs_if_requested(
+                    branch_context,
+                    knowledge,
+                    result,
+                    options,
+                    extra_metadata={
+                        "head_sha": current_head_sha,
+                        "diff_hash": current_diff_hash,
+                        "cache_hit": True,
+                    },
+                )
+                if options.post_github:
+                    self._progress("Posting cached GitHub PR comments with duplicate protection")
+                    markdown = build_markdown(branch_context, self.profile, knowledge, result, self.trace)
+                    self.tools.call(
+                        "github_post_review_comments",
+                        post_github_review_comments,
+                        result,
+                        result.suggestions,
+                        branch_context.diff,
+                        markdown,
+                        options.dry_run,
+                    )
+                if options.post_ado:
+                    self._progress("Posting cached Azure DevOps PR comment")
+                    markdown = build_markdown(branch_context, self.profile, knowledge, result, self.trace)
+                    self.tools.call("azure_devops_post_pr_comment", post_pr_comment, markdown, options.dry_run)
+                trace_path = self.trace.write()
+                self._progress(f"Trace written: {trace_path}", detail=True)
+                return WorkflowOutput(
+                    branch_context,
+                    knowledge,
+                    result,
+                    markdown_path,
+                    trace_path,
+                    should_fail=should_fail(result, options.fail_on),
+                )
+            if github_state.get("diff_hash") == current_diff_hash:
+                self._progress("GitHub PR memory matches this diff; skipping agent calls")
+                findings = findings_from_json({"findings": github_previous.get("findings", [])}) if github_previous else []
+                result = ReviewResult(
+                    summary="Diff unchanged since previous AirReview PR review; agents were not invoked.",
+                    findings=findings,
+                    suggestions=[],
+                    context={"repo_path": str(self.repo), "line_snippets": build_line_snippets(findings, branch_context.final_files)},
+                    plan={"strategy": "github_pr_memory_cache", "chunks": [], "budget": {"budget_exceeded": False}},
+                    history=compare_findings(previous_review, findings),
+                )
+                knowledge = KnowledgeBundle("", "", "", {"provider": "local", "cache_hit": True, "source": "github_pr_memory"})
+                markdown_path = self._write_outputs_if_requested(
+                    branch_context,
+                    knowledge,
+                    result,
+                    options,
+                    extra_metadata={
+                        "head_sha": current_head_sha,
+                        "diff_hash": current_diff_hash,
+                        "cache_hit": True,
+                        "cache_source": "github_pr_memory",
+                    },
+                )
+                if options.post_github:
+                    markdown = build_markdown(branch_context, self.profile, knowledge, result, self.trace)
+                    self.tools.call(
+                        "github_post_review_comments",
+                        post_github_review_comments,
+                        result,
+                        result.suggestions,
+                        branch_context.diff,
+                        markdown,
+                        options.dry_run,
+                    )
+                trace_path = self.trace.write()
+                self._progress(f"Trace written: {trace_path}", detail=True)
+                return WorkflowOutput(
+                    branch_context,
+                    knowledge,
+                    result,
+                    markdown_path,
+                    trace_path,
+                    should_fail=should_fail(result, options.fail_on),
+                )
 
         if not branch_context.changed_files:
             knowledge = KnowledgeBundle("", "", "", {"provider": "local", "skipped": True})
@@ -107,9 +208,30 @@ class AirReviewWorkflow:
                 plan={"strategy": "no_changes", "chunks": [], "budget": {"budget_exceeded": False}},
                 history=compare_findings(previous_review, []),
             )
-            markdown_path = self._write_outputs_if_requested(branch_context, knowledge, result, options)
+            markdown_path = self._write_outputs_if_requested(
+                branch_context,
+                knowledge,
+                result,
+                options,
+                extra_metadata={"head_sha": current_head_sha, "diff_hash": current_diff_hash},
+            )
             trace_path = self.trace.write()
             return WorkflowOutput(branch_context, knowledge, result, markdown_path, trace_path, should_fail=False)
+
+        review_files = branch_context.changed_files
+        if options.post_github and github_state:
+            previous_head_sha = str(github_state.get("head_sha", ""))
+            incremental_files = files_changed_since_previous_review(
+                self.repo,
+                previous_head_sha,
+                current_head_sha,
+                branch_context.changed_files,
+            )
+            if incremental_files and len(incremental_files) < len(branch_context.changed_files):
+                review_files = incremental_files
+                self._progress(
+                    f"Incremental PR review: focusing on {len(review_files)} file(s) changed since previous AirReview run"
+                )
 
         provider = LocalKnowledgeProvider(self.repo)
         self._progress("Loading local AirReview knowledge")
@@ -138,7 +260,13 @@ class AirReviewWorkflow:
         context_payload = {
             "branch": branch_context.branch,
             "base": branch_context.base,
-            "changed_files": branch_context.changed_files,
+            "changed_files": review_files,
+            "all_changed_files": branch_context.changed_files,
+            "incremental_review": {
+                "enabled": review_files != branch_context.changed_files,
+                "review_files": review_files,
+                "total_pr_files": len(branch_context.changed_files),
+            },
             "includes_worktree": branch_context.includes_worktree,
             "knowledge": {
                 "guidelines": knowledge.guidelines,
@@ -154,10 +282,10 @@ class AirReviewWorkflow:
             {
                 **context_payload,
                 "diff_size": len(branch_context.diff),
-                "final_file_count": len(branch_context.final_files),
+                "final_file_count": len(review_files),
             },
         )
-        chunks = normalize_chunks(plan_json, branch_context.changed_files)
+        chunks = normalize_chunks(plan_json, review_files)
         self._progress(
             f"Review plan: {plan_json.get('strategy', 'single_pass')} with {len(chunks)} chunk(s)"
         )
@@ -172,7 +300,7 @@ class AirReviewWorkflow:
         if self.profile.stop_when_budget_exceeded and plan_json.get("budget", {}).get("budget_exceeded"):
             chunks = chunks[: self.profile.max_chunks]
         for index, chunk in enumerate(chunks, start=1):
-            files = [path for path in chunk.get("files", []) if path in branch_context.changed_files]
+            files = [path for path in chunk.get("files", []) if path in review_files]
             if not files:
                 continue
             chunk_name = str(chunk.get("name", f"chunk-{index}"))
@@ -205,7 +333,14 @@ class AirReviewWorkflow:
             critic_agent,
             {
                 "findings": [finding.__dict__ for finding in findings],
-                "changed_files": branch_context.changed_files,
+                "changed_files": review_files,
+                "all_changed_files": branch_context.changed_files,
+                "incremental_review": {
+                    "enabled": review_files != branch_context.changed_files,
+                    "review_files": review_files,
+                    "total_pr_files": len(branch_context.changed_files),
+                },
+                "previous_review": previous_review,
                 "codebase_context": codebase_context,
                 "review_profile": self.profile.raw,
             },
@@ -238,7 +373,8 @@ class AirReviewWorkflow:
                     "branch": branch_context.branch,
                     "base": branch_context.base,
                     "scope": branch_context.scope,
-                    "changed_files": branch_context.changed_files,
+                    "changed_files": review_files,
+                    "all_changed_files": branch_context.changed_files,
                     "findings": [finding.__dict__ for finding in findings],
                     "history": history,
                     "review_profile": self.profile.raw,
@@ -276,7 +412,13 @@ class AirReviewWorkflow:
         )
         self.trace.findings_count = len(findings)
 
-        markdown_path = self._write_outputs_if_requested(branch_context, knowledge, result, options)
+        markdown_path = self._write_outputs_if_requested(
+            branch_context,
+            knowledge,
+            result,
+            options,
+            extra_metadata={"head_sha": current_head_sha, "diff_hash": current_diff_hash},
+        )
         if options.post_ado:
             self._progress("Posting Azure DevOps PR comment")
             markdown = build_markdown(branch_context, self.profile, knowledge, result, self.trace)
@@ -303,6 +445,7 @@ class AirReviewWorkflow:
         knowledge: KnowledgeBundle,
         result: ReviewResult,
         options: RunOptions,
+        extra_metadata: dict | None = None,
     ) -> Path | None:
         markdown_path = None
         markdown = build_markdown(branch_context, self.profile, knowledge, result, self.trace)
@@ -325,6 +468,7 @@ class AirReviewWorkflow:
                     "scope": branch_context.scope,
                     "model": self.model_client.model_name,
                     "markdown_path": str(markdown_path),
+                    **(extra_metadata or {}),
                 },
             )
         return markdown_path
@@ -412,6 +556,46 @@ def dependency_summary(context: dict) -> str:
     manifest_text = ", ".join(manifests) if isinstance(manifests, list) and manifests else "no dependency manifest"
     package_manager = context.get("package_manager", "unknown")
     return f"Dependency context: {total} package(s), {manifest_text}, package manager {package_manager}"
+
+
+def git_head_for_ref(repo: Path, ref: str) -> str:
+    return run_git(repo, ["rev-parse", ref], check=False) or run_git(repo, ["rev-parse", "HEAD"], check=False)
+
+
+def files_changed_since_previous_review(
+    repo: Path,
+    previous_head_sha: str,
+    current_head_sha: str,
+    allowed_files: list[str],
+) -> list[str]:
+    if not previous_head_sha or not current_head_sha or previous_head_sha == current_head_sha:
+        return []
+    output = run_git(repo, ["diff", "--name-only", f"{previous_head_sha}..{current_head_sha}", "--"], check=False)
+    if not output:
+        return []
+    allowed = set(allowed_files)
+    return [path for path in output.splitlines() if path in allowed]
+
+
+def previous_review_from_github_state(state: dict) -> dict:
+    findings = state.get("findings", {}) if isinstance(state, dict) else {}
+    if not isinstance(findings, dict):
+        return {}
+    open_findings = [
+        item
+        for item in findings.values()
+        if isinstance(item, dict) and item.get("status", "open") != "resolved"
+    ]
+    if not open_findings and not state.get("diff_hash"):
+        return {}
+    return {
+        "metadata": {
+            "source": "github_pr_memory",
+            "diff_hash": state.get("diff_hash", ""),
+            "head_sha": state.get("head_sha", ""),
+        },
+        "findings": open_findings,
+    }
 
 
 def build_line_snippets(findings: list, final_files: dict[str, str], radius: int = 2) -> dict[str, dict]:

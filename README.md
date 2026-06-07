@@ -52,7 +52,7 @@ Useful commands:
 airreview --base main
 airreview feature/my-branch --base develop --mock --output
 airreview --base main --scope working --output review_output.md --mock
-airreview --base main --output --fail-on medium
+airreview --base main --output
 airreview init
 airreview init --force
 airreview knowledge
@@ -64,7 +64,7 @@ airreview foundry sync-agents --dry-run
 
 `--output` without a value writes `.airreview/reviews/<branch>/review.md` and a sibling `.airreview/reviews/<branch>/review.json`. If you pass a relative name, for example `--output review_output.md`, AirReview writes `.airreview/reviews/<branch>/review_output.md`. Review artifacts stay under `.airreview/reviews/` and are ignored by Git by default.
 
-On repeated reviews, AirReview reviews the current branch state again and compares the new findings with the previous `.airreview/reviews/<branch>/review.json`:
+On repeated reviews, AirReview compares the current diff hash with the previous `.airreview/reviews/<branch>/review.json`. If the diff is unchanged, it reuses the cached structured review instead of calling the agents again. If the diff changed, it reviews the current branch state and compares the new findings with the previous review:
 
 - `new`: finding was not present in the previous review;
 - `still_present`: finding appears to still exist;
@@ -72,10 +72,10 @@ On repeated reviews, AirReview reviews the current branch state again and compar
 
 The active report only shows current findings. Resolved findings are summarized in the comparison section.
 
-In CI, use `--fail-on medium` to fail the pipeline when medium, high, or critical findings exist. Low findings pass by default:
+In CI, the recommended demo behavior is to fail only when AirReview itself fails. You can still opt into quality-gate behavior with `--fail-on medium` when you intentionally want medium, high, or critical findings to fail the job:
 
 ```bash
-airreview --fetch --output --post-ado --fail-on medium
+airreview --fetch --output --post-ado
 ```
 
 ## What AirReview reviews
@@ -193,8 +193,10 @@ The MVP posts one global PR thread. Line-by-line comments are intentionally out 
 `.github/workflows/pr-review.yml` reviews every pull request and posts a compact summary plus one comment per finding. AirReview uses inline GitHub review comments when the finding line is present in the PR diff, and falls back to individual PR conversation comments when GitHub cannot attach the line:
 
 ```bash
-airreview airreview-pr-head --base origin/<base> --output --post-github --fail-on medium
+airreview airreview-pr-head --base origin/<base> --output --post-github
 ```
+
+AirReview stores a small hidden PR memory in its summary comment. On later PR runs, it skips comments that were already posted, marks missing fingerprints as resolved in memory, and can skip agent calls entirely when the diff hash is identical.
 
 See [GITHUB_SETUP.md](GITHUB_SETUP.md) for permissions, variables, and GitHub OIDC setup.
 

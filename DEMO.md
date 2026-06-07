@@ -253,11 +253,13 @@ In this mode AirReview ignores unstaged and untracked files. This is the same co
 
 ### Re-running a Review
 
-When you run another review on the same branch, AirReview does not blindly append old comments. It reviews the current branch state again, then compares the current findings with:
+When you run another review on the same branch, AirReview does not blindly append old comments. Locally, it stores a structured result here:
 
 ```text
 .airreview/reviews/<branch>/review.json
 ```
+
+If the diff hash is unchanged, AirReview reuses that cached result and avoids another model call. If the diff changed, it reviews the new branch state and compares current findings with the previous review.
 
 The report shows:
 
@@ -265,23 +267,27 @@ The report shows:
 - findings still present;
 - findings resolved since the previous review.
 
+In GitHub PR mode, AirReview also stores a hidden memory block inside its summary comment. That lets a later workflow run skip already-posted findings, keep one comment per new issue, and avoid another agent run when the PR diff is exactly the same.
+
 The current findings remain the source of truth. Resolved findings are summarized but not kept as active issues.
 
 ### Pipeline Pass/Fail
 
-For PR pipelines, use:
+For the demo PR pipeline, use:
 
 ```bash
-airreview --fetch --output --post-ado --fail-on medium
+airreview --fetch --output --post-ado
 ```
 
 This means:
 
 - source and target branches are detected from PR variables;
 - review scope defaults to `branch`;
-- low findings: pipeline passes;
-- medium, high, critical findings: pipeline fails;
+- review findings are posted but do not fail the job by default;
+- the job fails only if AirReview itself fails or the surrounding build/test pipeline fails;
 - normal build/test failures still fail as usual.
+
+Add `--fail-on medium` only when you intentionally want AirReview to become a blocking quality gate.
 
 ## 7. Local GenAIOps Evals
 

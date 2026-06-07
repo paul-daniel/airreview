@@ -10,9 +10,12 @@ from typing import Any
 import requests
 
 from .agents import Finding, ReviewResult, Suggestion
+from .history import diff_hash, finding_fingerprint, serialize_finding
 
 
 AIRREVIEW_MARKER_PREFIX = "<!-- airreview:"
+AIRREVIEW_SUMMARY_MARKER = "<!-- airreview:summary -->"
+AIRREVIEW_STATE_MARKER = "<!-- airreview:state:v1"
 
 
 @dataclass(frozen=True)
@@ -108,19 +111,47 @@ def post_review_comments(
     if not context.head_sha:
         raise RuntimeError("GitHub pull request head SHA is missing from the event payload.")
 
-    cleanup_previous_airreview_comments(context)
-
     posted: list[dict[str, Any]] = []
-    summary = post_issue_comment(context, summary_body(summary_markdown, result))
-    posted.append({"kind": "summary", "url": summary.get("html_url")})
-    for index, finding in enumerate(result.findings, start=1):
+    issue_comments = list_issue_comments(context)
+    state = airreview_state_from_comments(issue_comments)
+    state.setdefault("version", 1)
+    state["repository"] = context.repository
+    state["pull_request"] = context.pull_request_number
+    state["head_sha"] = context.head_sha
+    state["diff_hash"] = diff_hash(diff)
+    state_findings = state.setdefault("findings", {})
+    if not isinstance(state_findings, dict):
+        state_findings = {}
+        state["findings"] = state_findings
+
+    current_fingerprints: set[str] = set()
+    skipped_existing = 0
+    for finding in result.findings:
+        fingerprint = finding_fingerprint(finding)
+        current_fingerprints.add(fingerprint)
+        previous = state_findings.get(fingerprint)
+        if isinstance(previous, dict) and previous.get("github_comment_id"):
+            previous.update(
+                {
+                    "status": "open",
+                    "last_seen_head_sha": context.head_sha,
+                    "file": finding.file,
+                    "line": finding.line,
+                    "end_line": finding.end_line,
+                    "severity": finding.severity,
+                    "confidence": finding.confidence,
+                }
+            )
+            skipped_existing += 1
+            continue
         suggestion = find_suggestion(finding, suggestions)
-        body = finding_comment_body(finding, suggestion, index)
+        body = finding_comment_body(finding, suggestion, fingerprint)
         inline_payload = inline_payload_for_finding(context, finding, commentable)
         if inline_payload:
             try:
                 payload = post_inline_comment(context, {**inline_payload, "body": body})
                 posted.append({"kind": "inline", "file": finding.file, "line": finding.line, "url": payload.get("html_url")})
+                state_findings[fingerprint] = state_entry_for_finding(finding, fingerprint, context, payload, "inline")
                 continue
             except RuntimeError:
                 # Fall back to a normal PR comment when GitHub rejects a line
@@ -128,7 +159,32 @@ def post_review_comments(
                 pass
         payload = post_issue_comment(context, fallback_comment_body(finding, body))
         posted.append({"kind": "fallback", "file": finding.file, "line": finding.line, "url": payload.get("html_url")})
-    return {"posted": True, "comments": posted}
+        state_findings[fingerprint] = state_entry_for_finding(finding, fingerprint, context, payload, "fallback")
+
+    resolved_count = 0
+    for fingerprint, item in list(state_findings.items()):
+        if fingerprint in current_fingerprints or not isinstance(item, dict) or item.get("status") == "resolved":
+            continue
+        item["status"] = "resolved"
+        item["resolved_head_sha"] = context.head_sha
+        resolved_count += 1
+
+    summary = upsert_summary_comment(context, issue_comments, summary_body(summary_markdown, result, state))
+    posted.append({"kind": "summary", "url": summary.get("html_url")})
+    return {
+        "posted": True,
+        "comments": posted,
+        "new_comments": len([item for item in posted if item.get("kind") not in {"summary"}]),
+        "skipped_existing": skipped_existing,
+        "resolved": resolved_count,
+    }
+
+
+def load_pr_review_state(dry_run: bool = False) -> dict[str, Any]:
+    context = github_context()
+    if dry_run or not context.is_complete:
+        return {}
+    return airreview_state_from_comments(list_issue_comments(context))
 
 
 def commentable_lines_from_diff(diff: str) -> dict[str, set[int]]:
@@ -239,10 +295,70 @@ def github_headers(context: GitHubContext) -> dict[str, str]:
     }
 
 
-def finding_comment_body(finding: Finding, suggestion: Suggestion | None, index: int) -> str:
+def airreview_state_from_comments(comments: list[dict[str, Any]]) -> dict[str, Any]:
+    for comment in comments:
+        state = extract_airreview_state(str(comment.get("body", "")))
+        if state:
+            return state
+    return {"version": 1, "findings": {}}
+
+
+def extract_airreview_state(body: str) -> dict[str, Any]:
+    start = body.find(AIRREVIEW_STATE_MARKER)
+    if start < 0:
+        return {}
+    start = body.find("\n", start)
+    if start < 0:
+        return {}
+    end = body.find("\n-->", start)
+    if end < 0:
+        return {}
+    try:
+        payload = json.loads(body[start:end].strip())
+    except json.JSONDecodeError:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def state_entry_for_finding(
+    finding: Finding, fingerprint: str, context: GitHubContext, payload: dict[str, Any], kind: str
+) -> dict[str, Any]:
+    entry = serialize_finding(finding)
+    entry.update(
+        {
+            "fingerprint": fingerprint,
+            "status": "open",
+            "first_seen_head_sha": context.head_sha,
+            "last_seen_head_sha": context.head_sha,
+            "github_comment_id": payload.get("id"),
+            "github_comment_url": payload.get("html_url"),
+            "github_comment_api_url": payload.get("url"),
+            "comment_kind": kind,
+        }
+    )
+    return entry
+
+
+def upsert_summary_comment(context: GitHubContext, comments: list[dict[str, Any]], body: str) -> dict[str, Any]:
+    for comment in comments:
+        if AIRREVIEW_SUMMARY_MARKER in str(comment.get("body", "")):
+            return patch_comment(context, str(comment.get("url", "")), body)
+    return post_issue_comment(context, body)
+
+
+def patch_comment(context: GitHubContext, url: str, body: str) -> dict[str, Any]:
+    if not url:
+        return post_issue_comment(context, body)
+    response = requests.patch(url, json={"body": body}, headers=github_headers(context), timeout=30)
+    if response.status_code >= 300:
+        raise RuntimeError(f"GitHub summary update failed: {response.status_code} {response.text[:500]}")
+    return response.json()
+
+
+def finding_comment_body(finding: Finding, suggestion: Suggestion | None, fingerprint: str) -> str:
     location = f"{finding.file}:{finding.line}" if finding.line else finding.file or "repository"
     parts = [
-        f"<!-- airreview:finding:{index} -->",
+        f"<!-- airreview:finding:{fingerprint} -->",
         f"### AirReview: {finding.severity.upper()} - {finding.title}",
         "",
         f"**Location:** `{location}`",
@@ -268,30 +384,38 @@ def fallback_comment_body(finding: Finding, body: str) -> str:
     return body
 
 
-def summary_body(markdown: str, result: ReviewResult) -> str:
+def summary_body(markdown: str, result: ReviewResult, state: dict[str, Any] | None = None) -> str:
     counts: dict[str, int] = {}
     for finding in result.findings:
         counts[finding.severity] = counts.get(finding.severity, 0) + 1
     count_text = ", ".join(f"{severity}: {count}" for severity, count in sorted(counts.items())) or "no findings"
-    return "\n".join(
-        [
-            "<!-- airreview:summary -->",
-            "## AirReview summary",
-            "",
-            result.summary or "Review completed.",
-            "",
-            f"Findings: {count_text}.",
-            "",
-            "AirReview posted one comment per finding when findings were available.",
-            "",
-            "<details>",
-            "<summary>Full Markdown report</summary>",
-            "",
-            markdown,
-            "",
-            "</details>",
-        ]
-    )
+    parts = [
+        AIRREVIEW_SUMMARY_MARKER,
+        "## AirReview summary",
+        "",
+        result.summary or "Review completed.",
+        "",
+        f"Findings: {count_text}.",
+        "",
+        "AirReview posts one comment per new finding and keeps a hidden PR memory to avoid duplicates.",
+        "",
+        "<details>",
+        "<summary>Full Markdown report</summary>",
+        "",
+        markdown,
+        "",
+        "</details>",
+    ]
+    if state is not None:
+        parts.extend(
+            [
+                "",
+                f"{AIRREVIEW_STATE_MARKER}",
+                json.dumps(state, sort_keys=True, separators=(",", ":")),
+                "-->",
+            ]
+        )
+    return "\n".join(parts)
 
 
 def code_block_lines(text: str, path: str = "") -> list[str]:

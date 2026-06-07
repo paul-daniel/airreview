@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import hashlib
+import re
 from pathlib import Path
 from typing import Any
 
@@ -65,8 +67,35 @@ def load_review_result(path: Path) -> ReviewResult:
         summary=str(payload.get("summary", "")),
         findings=findings,
         suggestions=suggestions,
+        context=payload.get("context", {}) if isinstance(payload.get("context"), dict) else {},
         plan=payload.get("plan", {}) if isinstance(payload.get("plan"), dict) else {},
+        history=payload.get("history", {}) if isinstance(payload.get("history"), dict) else {},
     )
+
+
+def diff_hash(diff: str) -> str:
+    return hashlib.sha256(diff.encode("utf-8", errors="replace")).hexdigest()[:16]
+
+
+def finding_fingerprint(finding: Finding | dict[str, Any]) -> str:
+    item = finding.__dict__ if isinstance(finding, Finding) else finding
+    explicit = item.get("fingerprint")
+    if explicit:
+        return str(explicit)
+    parts = [
+        _normalize(item.get("file", "")),
+        _normalize(item.get("category", "")),
+        _normalize(item.get("title", "")),
+        _normalize(item.get("issue", "")),
+        _normalize(item.get("why_it_matters", "")),
+    ]
+    return hashlib.sha256("|".join(parts).encode("utf-8", errors="replace")).hexdigest()[:16]
+
+
+def serialize_finding(finding: Finding) -> dict[str, Any]:
+    payload = dict(finding.__dict__)
+    payload["fingerprint"] = finding_fingerprint(payload)
+    return payload
 
 
 def save_review_json(repo: Path, branch: str, result: ReviewResult, metadata: dict[str, Any]) -> Path:
@@ -75,9 +104,11 @@ def save_review_json(repo: Path, branch: str, result: ReviewResult, metadata: di
     payload = {
         "metadata": metadata,
         "summary": result.summary,
-        "findings": [finding.__dict__ for finding in result.findings],
+        "findings": [serialize_finding(finding) for finding in result.findings],
         "suggestions": [suggestion.__dict__ for suggestion in result.suggestions],
+        "context": result.context,
         "plan": result.plan,
+        "history": result.history,
     }
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     return path
@@ -85,21 +116,18 @@ def save_review_json(repo: Path, branch: str, result: ReviewResult, metadata: di
 
 def compare_findings(previous: dict[str, Any], current: list[Finding]) -> dict[str, Any]:
     previous_findings = previous.get("findings", []) if isinstance(previous, dict) else []
-    previous_keys = {_finding_key(item): item for item in previous_findings if isinstance(item, dict)}
-    current_keys = {_finding_key(finding.__dict__): finding for finding in current}
+    previous_keys = {finding_fingerprint(item): item for item in previous_findings if isinstance(item, dict)}
+    current_keys = {finding_fingerprint(finding): finding for finding in current}
     return {
         "previous_run": bool(previous),
-        "new": [finding.__dict__ for key, finding in current_keys.items() if key not in previous_keys],
-        "still_present": [finding.__dict__ for key, finding in current_keys.items() if key in previous_keys],
+        "new": [serialize_finding(finding) for key, finding in current_keys.items() if key not in previous_keys],
+        "still_present": [serialize_finding(finding) for key, finding in current_keys.items() if key in previous_keys],
         "resolved": [item for key, item in previous_keys.items() if key not in current_keys],
     }
 
 
-def _finding_key(item: dict[str, Any]) -> str:
-    return "|".join(
-        [
-            str(item.get("file", "")),
-            str(item.get("line", 0)),
-            str(item.get("title", "")).strip().lower(),
-        ]
-    )
+def _normalize(value: object) -> str:
+    text = str(value or "").lower()
+    text = re.sub(r"\d+", "<n>", text)
+    text = re.sub(r"\s+", " ", text)
+    return text.strip()

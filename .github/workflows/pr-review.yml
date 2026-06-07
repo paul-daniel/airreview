@@ -53,5 +53,4 @@ jobs:
           airreview airreview-pr-head \
             --base origin/${{ github.base_ref }} \
             --output \
-            --post-github \
-            --fail-on medium
+            --post-github

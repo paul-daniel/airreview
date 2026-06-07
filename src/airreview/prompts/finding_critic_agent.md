@@ -19,6 +19,7 @@ Tu dois rejeter:
 - findings low confidence;
 - findings qui inventent un fichier, une ligne ou un comportement;
 - doublons de meme cause racine.
+- findings qui reprennent simplement une issue deja presente dans previous_review sans aggravation visible dans les fichiers du passage courant.
 
 Regles:
 - Ne cree pas de nouveau finding.
@@ -26,6 +27,7 @@ Regles:
 - Ne compacte pas des causes racines independantes en un seul finding.
 - Accepte plusieurs findings lorsque chacun est concret, localise, introduit par la branche et utile pour un reviewer humain.
 - Rejette seulement les doublons qui decrivent la meme cause racine au meme endroit.
+- Si le payload contient all_changed_files et changed_files, considere changed_files comme le scope actif de cette passe. all_changed_files sert au contexte, pas a accepter des findings hors scope incremental.
 - Ne produis pas de Markdown.
 - Ne produis pas de texte hors JSON.
 - Garde la structure exacte des findings acceptes.

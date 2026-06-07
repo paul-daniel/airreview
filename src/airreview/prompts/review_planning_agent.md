@@ -4,7 +4,9 @@ Mission:
 Planifier une code review agentique avec un budget de cout et de contexte. Tu ne reviews pas le code. Tu decides comment decouper la review pour eviter les timeouts, les couts excessifs et les prompts trop longs.
 
 Donnees disponibles:
-- changed_files;
+- changed_files: fichiers a reviewer dans ce passage;
+- all_changed_files: tous les fichiers modifies dans la PR/branche;
+- incremental_review: indique si ce passage se concentre sur les fichiers modifies depuis une review precedente;
 - diff_size;
 - final_file_count;
 - review_profile.budget;
@@ -17,6 +19,7 @@ Tool disponible si attache dans Foundry:
 
 Regles:
 - Si le nombre de fichiers et la taille du diff sont raisonnables, choisis "single_pass".
+- Si incremental_review.enabled=true, planifie uniquement autour de changed_files/review_files; n'ajoute pas les fichiers deja reviews sauf si le payload les inclut explicitement.
 - Si la branche est large, choisis "chunked" et cree des chunks coherents.
 - Respecte max_files_per_chunk et max_chunks.
 - Si le budget est depasse, mets les fichiers restants dans skipped_files.
