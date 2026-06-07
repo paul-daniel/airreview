@@ -396,6 +396,7 @@ def summary_body(markdown: str, result: ReviewResult, state: dict[str, Any] | No
         result.summary or "Review completed.",
         "",
         f"Findings: {count_text}.",
+        memory_summary_line(state),
         "",
         "AirReview posts one comment per new finding and keeps a hidden PR memory to avoid duplicates.",
         "",
@@ -416,6 +417,18 @@ def summary_body(markdown: str, result: ReviewResult, state: dict[str, Any] | No
             ]
         )
     return "\n".join(parts)
+
+
+def memory_summary_line(state: dict[str, Any] | None) -> str:
+    if state is None:
+        return "PR memory: not written."
+    findings = state.get("findings", {})
+    if not isinstance(findings, dict):
+        findings = {}
+    open_count = sum(1 for item in findings.values() if isinstance(item, dict) and item.get("status", "open") != "resolved")
+    resolved_count = sum(1 for item in findings.values() if isinstance(item, dict) and item.get("status") == "resolved")
+    diff = str(state.get("diff_hash", ""))[:8] or "unknown"
+    return f"PR memory: {open_count} open, {resolved_count} resolved, diff `{diff}`."
 
 
 def code_block_lines(text: str, path: str = "") -> list[str]:

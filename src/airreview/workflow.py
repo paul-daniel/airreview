@@ -94,7 +94,9 @@ class AirReviewWorkflow:
         current_head_sha = git_head_for_ref(self.repo, branch_context.branch)
         previous_review = load_previous_review(self.repo, branch_context.branch)
         github_state: dict = {}
-        if options.post_github:
+        github_pr_context = github_context()
+        github_memory_enabled = github_pr_context.is_complete and not options.dry_run
+        if github_memory_enabled:
             self._progress("Checking GitHub PR memory for previous AirReview state")
             try:
                 github_state = self.tools.call("github_state.load", load_pr_review_state, options.dry_run)
@@ -104,6 +106,8 @@ class AirReviewWorkflow:
             if github_previous and not previous_review:
                 previous_review = github_previous
                 self._progress("Previous AirReview state loaded from GitHub PR memory")
+        elif options.post_github:
+            self._progress("GitHub PR memory unavailable before review: missing PR context or token", detail=True)
         if previous_review:
             self._progress("Previous AirReview result found for comparison")
             metadata = previous_review.get("metadata", {}) if isinstance(previous_review.get("metadata"), dict) else {}

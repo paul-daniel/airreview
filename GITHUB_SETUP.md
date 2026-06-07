@@ -118,7 +118,9 @@ one inline GitHub review comment per finding when the finding line is commentabl
 one individual fallback PR conversation comment per finding when GitHub cannot attach the line
 ```
 
-AirReview keeps a hidden memory block in the summary comment. Reruns skip findings that already have a comment, post only new findings, and mark disappeared fingerprints as resolved in memory.
+AirReview keeps PR memory in the summary comment. The summary visibly shows `PR memory: ...`; the detailed JSON is hidden in an HTML marker in that same comment. Reruns skip findings that already have a comment, post only new findings, and mark disappeared fingerprints as resolved in memory.
+
+If your workflow splits review and posting into separate steps or jobs, pass `GITHUB_TOKEN` to the review step too. Without it, AirReview can still review, but it cannot read PR memory before spending model tokens.
 
 ## 5. Permissions
 

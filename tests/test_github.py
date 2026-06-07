@@ -3,7 +3,7 @@ from types import SimpleNamespace
 from pathlib import Path
 
 from airreview.agents import Finding, ReviewResult, Suggestion
-from airreview.github import commentable_lines_from_diff, github_context, post_review_comments
+from airreview.github import commentable_lines_from_diff, github_context, post_review_comments, summary_body
 from airreview.history import finding_fingerprint, load_review_result
 
 
@@ -184,6 +184,24 @@ def test_post_review_comments_skips_existing_finding_from_pr_state(monkeypatch, 
     assert posted["new_comments"] == 0
     assert not [call for call in calls if call[0] == "POST"]
     assert [call for call in calls if call[0] == "PATCH"]
+
+
+def test_summary_body_shows_visible_pr_memory_status() -> None:
+    result = ReviewResult(summary="Done.", findings=[])
+    body = summary_body(
+        "# report",
+        result,
+        {
+            "diff_hash": "1234567890abcdef",
+            "findings": {
+                "a": {"status": "open"},
+                "b": {"status": "resolved"},
+            },
+        },
+    )
+
+    assert "PR memory: 1 open, 1 resolved, diff `12345678`." in body
+    assert "<!-- airreview:state:v1" in body
 
 
 def test_load_review_result_from_saved_json(tmp_path: Path) -> None:

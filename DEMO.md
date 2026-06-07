@@ -267,7 +267,9 @@ The report shows:
 - findings still present;
 - findings resolved since the previous review.
 
-In GitHub PR mode, AirReview also stores a hidden memory block inside its summary comment. That lets a later workflow run skip already-posted findings, keep one comment per new issue, and avoid another agent run when the PR diff is exactly the same.
+In GitHub PR mode, AirReview stores memory inside its summary comment, not as a file in the repo. The summary visibly shows `PR memory: ...`; the detailed JSON state is hidden in an HTML marker inside that same comment. That lets a later workflow run skip already-posted findings, keep one comment per new issue, and avoid another agent run when the PR diff is exactly the same.
+
+Important: the step that runs the review agents must receive `GITHUB_TOKEN` so it can read that PR memory before spending tokens. This is true even if a later step or job is responsible for posting comments.
 
 The current findings remain the source of truth. Resolved findings are summarized but not kept as active issues.
 

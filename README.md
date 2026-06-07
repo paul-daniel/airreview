@@ -196,7 +196,7 @@ The MVP posts one global PR thread. Line-by-line comments are intentionally out 
 airreview airreview-pr-head --base origin/<base> --output --post-github
 ```
 
-AirReview stores a small hidden PR memory in its summary comment. On later PR runs, it skips comments that were already posted, marks missing fingerprints as resolved in memory, and can skip agent calls entirely when the diff hash is identical.
+AirReview stores PR memory in its GitHub summary comment, not in the application repository. The visible summary shows `PR memory: ...`, and the detailed state is kept in a hidden HTML marker in that comment. On later PR runs, it skips comments that were already posted, marks missing fingerprints as resolved in memory, and can skip agent calls entirely when the diff hash is identical. For this optimization to run before model calls, the review step must receive `GITHUB_TOKEN`, even if posting happens in a later step.
 
 See [GITHUB_SETUP.md](GITHUB_SETUP.md) for permissions, variables, and GitHub OIDC setup.
 
