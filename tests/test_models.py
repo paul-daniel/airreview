@@ -1,6 +1,4 @@
 import json
-import sys
-from types import SimpleNamespace
 
 from airreview.models import FoundryAgentClient, MockModelClient, RetryPolicy, call_with_retry, normalize_openai_base_url
 
@@ -49,29 +47,34 @@ def test_mock_fix_suggestion_uses_final_file_shape() -> None:
 def test_foundry_agent_client_uses_agent_reference(monkeypatch) -> None:
     calls = []
 
-    class FakeResponses:
-        def create(self, **kwargs):
-            calls.append(kwargs)
-            return SimpleNamespace(output_text='{"ok": true}')
+    class FakeResponse:
+        status_code = 200
+        text = ""
 
-    class FakeOpenAI:
-        def __init__(self, **kwargs):
-            self.responses = FakeResponses()
+        def json(self):
+            return {"output": [{"content": [{"type": "output_text", "text": '{"ok": true}'}]}]}
+
+    def fake_post(url, **kwargs):
+        calls.append({"url": url, **kwargs})
+        return FakeResponse()
 
     monkeypatch.setenv("FOUNDRY_PROJECT_ENDPOINT", "https://example.services.ai.azure.com/api/projects/proj")
     monkeypatch.setenv("FOUNDRY_API_KEY", "test-key")
-    monkeypatch.setitem(sys.modules, "openai", SimpleNamespace(OpenAI=FakeOpenAI))
+    monkeypatch.setattr("airreview.models.requests.post", fake_post)
 
     result = FoundryAgentClient().complete_json("Branch Review Agent", "system prompt", {"x": 1})
 
     assert json.loads(result) == {"ok": True}
     assert calls
-    assert "instructions" not in calls[0]
-    assert calls[0]["model"] == "airreview-review-codex"
-    assert calls[0]["extra_body"] == {
-        "agent_reference": {"name": "airreview-branch-review-agent", "type": "agent_reference"}
+    assert calls[0]["url"] == "https://example.services.ai.azure.com/api/projects/proj/openai/v1/responses"
+    assert calls[0]["json"]["model"] == "airreview-review-codex"
+    assert calls[0]["json"]["agent_reference"] == {
+        "name": "airreview-branch-review-agent",
+        "type": "agent_reference",
     }
-    assert "runtime_instructions" in calls[0]["input"]
+    assert "extra_body" not in calls[0]["json"]
+    assert "instructions" not in calls[0]["json"]
+    assert "runtime_instructions" in calls[0]["json"]["input"]
 
 
 def test_rate_limit_retry_retries_429(monkeypatch) -> None:

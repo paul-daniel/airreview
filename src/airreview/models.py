@@ -7,6 +7,8 @@ import time
 from abc import ABC, abstractmethod
 from typing import Any
 
+import requests
+
 
 class ModelClient(ABC):
     model_name: str
@@ -209,15 +211,7 @@ class FoundryAgentClient(ModelClient):
         self.retry_policy = RetryPolicy.from_env()
 
     def complete_json(self, agent_name: str, instructions: str, payload: dict[str, Any]) -> str:
-        from openai import OpenAI
-
         base_url = normalize_openai_base_url(self.endpoint)
-        api_key: str | Any
-        if self.api_key:
-            api_key = self.api_key
-        else:
-            api_key = azure_ai_token_provider()
-        client = OpenAI(base_url=base_url, api_key=api_key)
         foundry_agent_name = self.agent_names.get(agent_name)
         if not foundry_agent_name:
             raise RuntimeError(f"No Foundry agent mapping configured for {agent_name}.")
@@ -234,15 +228,45 @@ class FoundryAgentClient(ModelClient):
             ensure_ascii=False,
         )
         response = call_with_retry(
-            lambda: client.responses.create(
-                model=model_name,
-                input=user_content,
-                extra_body={"agent_reference": {"name": foundry_agent_name, "type": "agent_reference"}},
-            ),
+            lambda: self._create_agent_response(base_url, model_name, foundry_agent_name, user_content),
             self.retry_policy,
             agent_name,
         )
-        return response.output_text or "{}"
+        return extract_response_text(response) or "{}"
+
+    def _create_agent_response(
+        self,
+        base_url: str,
+        model_name: str,
+        foundry_agent_name: str,
+        user_content: str,
+    ) -> dict[str, Any]:
+        response = requests.post(
+            base_url.rstrip("/") + "/responses",
+            headers=self._auth_headers(),
+            json={
+                "model": model_name,
+                "input": user_content,
+                "agent_reference": {"name": foundry_agent_name, "type": "agent_reference"},
+            },
+            timeout=float(first_env("AIRREVIEW_MODEL_TIMEOUT_SECONDS", default="120")),
+        )
+        if response.status_code >= 300:
+            raise RuntimeError(f"Foundry agent response failed: {response.status_code} {response.text[:1000]}")
+        payload = response.json()
+        if not isinstance(payload, dict):
+            raise RuntimeError("Foundry agent response was not a JSON object.")
+        return payload
+
+    def _auth_headers(self) -> dict[str, str]:
+        if self.api_key:
+            token = self.api_key
+        else:
+            token = azure_ai_token_provider()()
+        return {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        }
 
 
 def build_model_client(mock: bool) -> ModelClient:
@@ -280,6 +304,23 @@ def azure_ai_token_provider() -> Any:
 
 def is_ci_environment() -> bool:
     return any(os.getenv(name) for name in ("CI", "GITHUB_ACTIONS", "TF_BUILD", "BUILD_BUILDID"))
+
+
+def extract_response_text(response: dict[str, Any]) -> str:
+    output = response.get("output", [])
+    if not isinstance(output, list):
+        return ""
+    chunks: list[str] = []
+    for item in output:
+        if not isinstance(item, dict):
+            continue
+        content = item.get("content", [])
+        if not isinstance(content, list):
+            continue
+        for part in content:
+            if isinstance(part, dict) and part.get("type") == "output_text":
+                chunks.append(str(part.get("text", "")))
+    return "\n".join(chunk for chunk in chunks if chunk)
 
 
 class RetryPolicy:
