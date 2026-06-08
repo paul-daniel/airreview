@@ -9,5 +9,6 @@ build/
 .airreview/runs/
 .airreview/reviews/
 demo_presentation.md
+docs/airreview-presentation-cheatsheet 2.md
 foundry/knowledge/external_upload/
 foundry/knowledge/document_upload/

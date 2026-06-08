@@ -312,6 +312,19 @@ def focus_for_group(name: str) -> str:
     }.get(name, "repository conventions and recurring implementation patterns")
 
 
+def display_name_for_group(name: str) -> str:
+    base = name.rsplit("-", 1)[0] if re.search(r"-\d+$", name) else name
+    return {
+        "tests": "Tests Practice Discovery",
+        "helpers-and-lib": "Helpers/Lib Practice Discovery",
+        "services-and-api": "Services/API Practice Discovery",
+        "hooks": "Hooks Practice Discovery",
+        "ui-and-features": "UI/Features Practice Discovery",
+        "config-and-dependencies": "Config/Dependencies Practice Discovery",
+        "general-code": "General Code Practice Discovery",
+    }.get(base, f"{name} Practice Discovery")
+
+
 def ensure_minimum_chunks(chunks: list[PracticeDiscoveryChunk]) -> list[PracticeDiscoveryChunk]:
     if len(chunks) != 1 or len(chunks[0].files) < 4:
         return chunks

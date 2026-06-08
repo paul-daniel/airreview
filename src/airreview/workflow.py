@@ -22,7 +22,13 @@ from .dependencies import scan_dependency_context
 from .git_tools import BranchContext, collect_branch_context, fetch, run_git
 from .github import github_context, load_pr_review_state, post_review_comments as post_github_review_comments
 from .history import compare_findings, default_json_path, diff_hash, load_previous_review, load_review_result, save_review_json
-from .knowledge import KnowledgeBundle, LocalKnowledgeProvider, discovery_chunk_payload, sample_practice_chunks
+from .knowledge import (
+    KnowledgeBundle,
+    LocalKnowledgeProvider,
+    discovery_chunk_payload,
+    display_name_for_group,
+    sample_practice_chunks,
+)
 from .models import ModelClient
 from .rendering import build_markdown, output_path_for_branch, write_markdown
 from .tracing import RunTrace, ToolRegistry
@@ -578,11 +584,15 @@ class AirReviewWorkflow:
             return provider.load_practice_profile()
         max_workers = max(1, min(int(os.getenv("AIRREVIEW_PRACTICE_MAX_PARALLEL_WORKERS", "2")), len(chunks)))
         self._progress(f"Practice discovery plan: {len(chunks)} chunk(s), {max_workers} parallel worker(s)")
+        self._progress(f"{len(chunks)} Codebase Context sub-agent(s) started for practice discovery")
         worker_results: list[dict] = []
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             pending = {}
             for index, chunk in enumerate(chunks, start=1):
-                display_name = f"Codebase Context Worker Agent - {chunk.name}"
+                display_name = (
+                    f"Codebase Context Sub-agent {index}/{len(chunks)} - "
+                    f"{display_name_for_group(chunk.name)}"
+                )
                 files = ", ".join(sample.path for sample in chunk.files[:6])
                 self._progress(f"{display_name} analyzing {len(chunk.files)} file(s): {files}")
                 payload = {
@@ -602,20 +612,20 @@ class AirReviewWorkflow:
                     "worker_count": len(chunks),
                 }
                 future = executor.submit(self._run_agent_plain, worker_agent, payload, display_name)
-                pending[future] = chunk.name
+                pending[future] = display_name
             while pending:
                 done, _ = wait(pending, timeout=12, return_when=FIRST_COMPLETED)
                 if not done:
                     running = ", ".join(sorted(pending.values()))
-                    self._progress(f"Practice discovery workers still running: {running}")
+                    self._progress(f"Codebase Context sub-agent(s) still running: {running}")
                     continue
                 for future in done:
-                    chunk_name = pending.pop(future)
+                    display_name = pending.pop(future)
                     result = future.result()
                     worker_results.append(result)
                     observed = result.get("observed_practices", [])
                     observed_count = len(observed) if isinstance(observed, list) else 0
-                    self._progress(f"Practice worker {chunk_name} returned {observed_count} observed practice(s)")
+                    self._progress(f"{display_name} returned {observed_count} observed practice(s)")
         synthesis_payload = {
             "mode": "synthesize_practice_profile",
             "branch": branch_context.branch,
