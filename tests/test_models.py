@@ -77,6 +77,33 @@ def test_foundry_agent_client_uses_agent_reference(monkeypatch) -> None:
     assert "runtime_instructions" in calls[0]["json"]["input"]
 
 
+def test_foundry_agent_client_routes_context_workers_to_dedicated_agents(monkeypatch) -> None:
+    calls = []
+
+    class FakeResponse:
+        status_code = 200
+        text = ""
+
+        def json(self):
+            return {"output": [{"content": [{"type": "output_text", "text": '{"ok": true}'}]}]}
+
+    def fake_post(url, **kwargs):
+        calls.append({"url": url, **kwargs})
+        return FakeResponse()
+
+    monkeypatch.setenv("FOUNDRY_PROJECT_ENDPOINT", "https://example.services.ai.azure.com/api/projects/proj")
+    monkeypatch.setenv("FOUNDRY_API_KEY", "test-key")
+    monkeypatch.setattr("airreview.models.requests.post", fake_post)
+
+    FoundryAgentClient().complete_json("Codebase Context Worker Agent", "system prompt", {"mode": "discover_practices_chunk"})
+
+    assert calls[0]["json"]["model"] == "airreview-context-worker-mini"
+    assert calls[0]["json"]["agent_reference"] == {
+        "name": "airreview-codebase-context-worker-agent",
+        "type": "agent_reference",
+    }
+
+
 def test_rate_limit_retry_retries_429(monkeypatch) -> None:
     attempts = {"count": 0}
     sleeps = []

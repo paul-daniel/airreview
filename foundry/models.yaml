@@ -15,6 +15,22 @@ models:
     sku: GlobalStandard
     capacity: 10
 
+  codebase_context_worker:
+    deployment_name: airreview-context-worker-mini
+    model: gpt-4.1-mini
+    model_version: auto
+    model_format: OpenAI
+    sku: GlobalStandard
+    capacity: 10
+
+  codebase_context_synthesis:
+    deployment_name: airreview-context-synthesis-mini
+    model: gpt-4.1-mini
+    model_version: auto
+    model_format: OpenAI
+    sku: GlobalStandard
+    capacity: 10
+
   branch_review:
     deployment_name: airreview-review-codex
     model: gpt-5-codex

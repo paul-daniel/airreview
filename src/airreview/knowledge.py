@@ -257,7 +257,7 @@ def sample_practice_chunks(
             part = files[index : index + max_files_per_chunk]
             suffix = f"-{index // max_files_per_chunk + 1}" if index else ""
             chunks.append(PracticeDiscoveryChunk(f"{name}{suffix}", focus_for_group(name), part))
-    return ensure_minimum_chunks(chunks)
+    return ensure_minimum_chunks(prioritize_diverse_practice_chunks(chunks))
 
 
 def practice_candidate_paths(repo: Path, changed_files: list[str]) -> list[Path]:
@@ -334,6 +334,33 @@ def ensure_minimum_chunks(chunks: list[PracticeDiscoveryChunk]) -> list[Practice
         PracticeDiscoveryChunk(f"{chunks[0].name}-a", chunks[0].focus, files[:midpoint]),
         PracticeDiscoveryChunk(f"{chunks[0].name}-b", chunks[0].focus, files[midpoint:]),
     ]
+
+
+def prioritize_diverse_practice_chunks(chunks: list[PracticeDiscoveryChunk]) -> list[PracticeDiscoveryChunk]:
+    priority = {
+        "services-and-api": 0,
+        "helpers-and-lib": 1,
+        "tests": 2,
+        "ui-and-features": 3,
+        "hooks": 4,
+        "config-and-dependencies": 5,
+        "general-code": 6,
+    }
+    first_by_group: list[PracticeDiscoveryChunk] = []
+    remaining: list[PracticeDiscoveryChunk] = []
+    seen: set[str] = set()
+    for chunk in chunks:
+        group = chunk_group_name(chunk.name)
+        if group not in seen:
+            seen.add(group)
+            first_by_group.append(chunk)
+        else:
+            remaining.append(chunk)
+    return sorted(first_by_group, key=lambda chunk: priority.get(chunk_group_name(chunk.name), 99)) + remaining
+
+
+def chunk_group_name(name: str) -> str:
+    return re.sub(r"-\d+$", "", name)
 
 
 def practice_sample_signature(chunks: list[PracticeDiscoveryChunk]) -> str:

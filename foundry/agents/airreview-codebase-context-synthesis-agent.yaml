@@ -1,0 +1,6 @@
+name: airreview-codebase-context-synthesis-agent
+description: Synthesizes codebase practice discovery worker outputs into a reusable profile.
+model_key: codebase_context_synthesis
+prompt_file: src/airreview/prompts/codebase_context_agent.md
+tools:
+  - airreview_file_search_knowledge

@@ -264,6 +264,14 @@ class FoundryAgentClient(ModelClient):
         self.agent_names = {
             "Review Planning Agent": first_env("AIRREVIEW_FOUNDRY_PLANNING_AGENT", default="airreview-planning-agent"),
             "Codebase Context Agent": first_env("AIRREVIEW_FOUNDRY_CONTEXT_AGENT", default="airreview-codebase-context-agent"),
+            "Codebase Context Worker Agent": first_env(
+                "AIRREVIEW_FOUNDRY_CONTEXT_WORKER_AGENT",
+                default="airreview-codebase-context-worker-agent",
+            ),
+            "Codebase Context Synthesis Agent": first_env(
+                "AIRREVIEW_FOUNDRY_CONTEXT_SYNTHESIS_AGENT",
+                default="airreview-codebase-context-synthesis-agent",
+            ),
             "Branch Review Agent": first_env("AIRREVIEW_FOUNDRY_REVIEW_AGENT", default="airreview-branch-review-agent"),
             "Finding Critic Agent": first_env("AIRREVIEW_FOUNDRY_CRITIC_AGENT", default="airreview-finding-critic-agent"),
             "Fix Suggestion Agent": first_env("AIRREVIEW_FOUNDRY_FIX_AGENT", default="airreview-fix-suggestion-agent"),
@@ -271,6 +279,14 @@ class FoundryAgentClient(ModelClient):
         self.agent_models = {
             "Review Planning Agent": first_env("AIRREVIEW_FOUNDRY_PLANNING_MODEL", default="airreview-planning-mini"),
             "Codebase Context Agent": first_env("AIRREVIEW_FOUNDRY_CONTEXT_MODEL", default="airreview-context-mini"),
+            "Codebase Context Worker Agent": first_env(
+                "AIRREVIEW_FOUNDRY_CONTEXT_WORKER_MODEL",
+                default="airreview-context-worker-mini",
+            ),
+            "Codebase Context Synthesis Agent": first_env(
+                "AIRREVIEW_FOUNDRY_CONTEXT_SYNTHESIS_MODEL",
+                default="airreview-context-synthesis-mini",
+            ),
             "Branch Review Agent": first_env("AIRREVIEW_FOUNDRY_REVIEW_MODEL", default="airreview-review-codex"),
             "Finding Critic Agent": first_env("AIRREVIEW_FOUNDRY_CRITIC_MODEL", default="airreview-critic-mini"),
             "Fix Suggestion Agent": first_env("AIRREVIEW_FOUNDRY_FIX_MODEL", default="airreview-fix-codex"),
@@ -279,11 +295,10 @@ class FoundryAgentClient(ModelClient):
 
     def complete_json(self, agent_name: str, instructions: str, payload: dict[str, Any]) -> str:
         base_url = normalize_openai_base_url(self.endpoint)
-        mapped_agent_name = map_foundry_agent_name(agent_name)
-        foundry_agent_name = self.agent_names.get(mapped_agent_name)
+        foundry_agent_name = self.agent_names.get(agent_name)
         if not foundry_agent_name:
             raise RuntimeError(f"No Foundry agent mapping configured for {agent_name}.")
-        model_name = self.agent_models.get(mapped_agent_name)
+        model_name = self.agent_models.get(agent_name)
         if not model_name:
             raise RuntimeError(f"No Foundry model mapping configured for {agent_name}.")
         user_content = json.dumps(
@@ -343,12 +358,6 @@ def build_model_client(mock: bool) -> ModelClient:
     if first_env("AIRREVIEW_AGENT_MODE").lower() == "foundry_agents":
         return FoundryAgentClient()
     return FoundryModelClient()
-
-
-def map_foundry_agent_name(agent_name: str) -> str:
-    if agent_name in {"Codebase Context Worker Agent", "Codebase Context Synthesis Agent"}:
-        return "Codebase Context Agent"
-    return agent_name
 
 
 def first_env(*names: str, default: str = "") -> str:

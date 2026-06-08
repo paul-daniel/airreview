@@ -572,9 +572,9 @@ class AirReviewWorkflow:
         chunks = sample_practice_chunks(
             self.repo,
             branch_context.changed_files,
-            max_files=int(os.getenv("AIRREVIEW_PRACTICE_MAX_FILES", "40")),
-            max_files_per_chunk=int(os.getenv("AIRREVIEW_PRACTICE_MAX_FILES_PER_CHUNK", "12")),
-            max_chars_per_file=int(os.getenv("AIRREVIEW_PRACTICE_MAX_CHARS_PER_FILE", "3500")),
+            max_files=int(os.getenv("AIRREVIEW_PRACTICE_MAX_FILES", "16")),
+            max_files_per_chunk=int(os.getenv("AIRREVIEW_PRACTICE_MAX_FILES_PER_CHUNK", "4")),
+            max_chars_per_file=int(os.getenv("AIRREVIEW_PRACTICE_MAX_CHARS_PER_FILE", "1200")),
         )
         max_chunks = int(os.getenv("AIRREVIEW_PRACTICE_MAX_CHUNKS", "2"))
         if max_chunks > 0:

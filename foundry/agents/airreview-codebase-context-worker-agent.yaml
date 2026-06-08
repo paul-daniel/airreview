@@ -1,0 +1,6 @@
+name: airreview-codebase-context-worker-agent
+description: Discovers repository practices from one codebase chunk.
+model_key: codebase_context_worker
+prompt_file: src/airreview/prompts/codebase_context_agent.md
+tools:
+  - airreview_file_search_knowledge

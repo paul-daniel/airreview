@@ -18,6 +18,8 @@ def test_load_foundry_agent_manifests() -> None:
     assert {manifest.name for manifest in manifests} == {
         "airreview-planning-agent",
         "airreview-codebase-context-agent",
+        "airreview-codebase-context-worker-agent",
+        "airreview-codebase-context-synthesis-agent",
         "airreview-branch-review-agent",
         "airreview-finding-critic-agent",
         "airreview-fix-suggestion-agent",
@@ -25,6 +27,8 @@ def test_load_foundry_agent_manifests() -> None:
     assert {manifest.model for manifest in manifests} == {
         "airreview-planning-mini",
         "airreview-context-mini",
+        "airreview-context-worker-mini",
+        "airreview-context-synthesis-mini",
         "airreview-review-codex",
         "airreview-critic-mini",
         "airreview-fix-codex",
@@ -34,6 +38,8 @@ def test_load_foundry_agent_manifests() -> None:
     assert tools_by_agent["airreview-branch-review-agent"] == ("context7_docs",)
     assert tools_by_agent["airreview-fix-suggestion-agent"] == ("context7_docs",)
     assert tools_by_agent["airreview-codebase-context-agent"] == ("airreview_file_search_knowledge",)
+    assert tools_by_agent["airreview-codebase-context-worker-agent"] == ("airreview_file_search_knowledge",)
+    assert tools_by_agent["airreview-codebase-context-synthesis-agent"] == ("airreview_file_search_knowledge",)
     assert tools_by_agent["airreview-finding-critic-agent"] == ()
 
 
@@ -69,6 +75,8 @@ def test_load_foundry_model_manifests() -> None:
     assert {manifest.key for manifest in manifests} == {
         "planning",
         "codebase_context",
+        "codebase_context_worker",
+        "codebase_context_synthesis",
         "branch_review",
         "finding_critic",
         "fix_suggestion",
@@ -81,7 +89,7 @@ def test_sync_agents_dry_run() -> None:
     repo = Path(__file__).resolve().parents[1]
     rows = sync_agents(repo, dry_run=True)
 
-    assert len(rows) == 5
+    assert len(rows) == 7
     assert all(row["dry_run"] for row in rows)
     assert any(
         row["name"] == "airreview-branch-review-agent"
@@ -99,7 +107,7 @@ def test_sync_models_dry_run() -> None:
     repo = Path(__file__).resolve().parents[1]
     rows = sync_models(repo, dry_run=True)
 
-    assert len(rows) == 5
+    assert len(rows) == 7
     assert all(row["status"] == "would_create" for row in rows)
 
 
@@ -202,8 +210,8 @@ def test_sync_models_resolves_auto_model_version(monkeypatch) -> None:
 
     rows = sync_models(repo)
 
-    assert len(rows) == 5
+    assert len(rows) == 7
     assert all(row["status"] == "created" for row in rows)
     create_calls = [call for call in calls if call[:4] == ["cognitiveservices", "account", "deployment", "create"]]
-    assert len(create_calls) == 5
+    assert len(create_calls) == 7
     assert all("--model-version" in call for call in create_calls)
