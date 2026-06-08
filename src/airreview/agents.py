@@ -90,6 +90,24 @@ def validate_agent_output(agent_name: str, payload: dict[str, Any]) -> None:
     required_by_agent = {
         "Review Planning Agent": ("strategy", "chunks", "budget"),
         "Codebase Context Agent": ("relevant_guidelines", "known_smells_to_ignore", "architecture_context", "review_focus"),
+        "Codebase Context Worker Agent": (
+            "chunk_name",
+            "observed_practices",
+            "reusable_helpers",
+            "testing_patterns",
+            "legacy_smell_candidates",
+            "bad_practices_not_to_normalize",
+        ),
+        "Codebase Context Synthesis Agent": (
+            "observed_practices",
+            "recommended_practices",
+            "legacy_smells_to_ignore_in_reviews",
+            "objective_bad_practices_not_to_normalize",
+            "reusable_helpers",
+            "testing_patterns",
+            "architecture_patterns",
+            "review_guidance",
+        ),
         "Branch Review Agent": ("summary", "findings"),
         "Finding Critic Agent": ("accepted_findings", "rejected_findings", "summary"),
         "Fix Suggestion Agent": ("suggestions",),
@@ -105,6 +123,12 @@ def validate_agent_output(agent_name: str, payload: dict[str, Any]) -> None:
         raise ValueError("`accepted_findings` must be a list")
     if agent_name == "Fix Suggestion Agent" and not isinstance(payload.get("suggestions"), list):
         raise ValueError("`suggestions` must be a list")
+    if agent_name in {"Codebase Context Worker Agent", "Codebase Context Synthesis Agent"}:
+        for key, value in payload.items():
+            if key in {"chunk_name", "confidence", "summary"}:
+                continue
+            if key != "metadata" and not isinstance(value, list):
+                raise ValueError(f"`{key}` must be a list")
 
 
 def findings_from_json(payload: dict[str, Any]) -> list[Finding]:

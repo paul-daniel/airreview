@@ -46,7 +46,74 @@ class MockModelClient(ModelClient):
                     "rationale": "Mock planner groups files by configured budget to keep review cost bounded.",
                 }
             )
+        if agent_name == "Codebase Context Worker Agent":
+            chunk = payload.get("chunk", {})
+            files = chunk.get("files", []) if isinstance(chunk, dict) else []
+            helper_files = [item.get("path", "") for item in files if "lib" in item.get("path", "") or "util" in item.get("path", "")]
+            test_files = [item.get("path", "") for item in files if "test" in item.get("path", "").lower()]
+            return json.dumps(
+                {
+                    "chunk_name": chunk.get("name", "mock-chunk") if isinstance(chunk, dict) else "mock-chunk",
+                    "observed_practices": [
+                        "Code samples use repository-local modules and feature-oriented folders when available.",
+                        "Prefer nearby helper/service patterns before adding new one-off logic.",
+                    ],
+                    "reusable_helpers": [
+                        {"name": path.rsplit("/", 1)[-1], "path": path, "when_to_use": "Reuse existing helper patterns before duplicating logic."}
+                        for path in helper_files[:3]
+                    ],
+                    "testing_patterns": [
+                        {"pattern": "Focused unit tests near changed behavior", "evidence": ", ".join(test_files[:3]) or "No test files in this chunk."}
+                    ],
+                    "architecture_patterns": [
+                        {"pattern": "Keep domain behavior near existing feature/service boundaries", "evidence": "Detected from sampled paths."}
+                    ],
+                    "legacy_smell_candidates": [],
+                    "bad_practices_not_to_normalize": [
+                        "Do not treat hardcoded secrets, fail-open authorization, or missing tests as accepted conventions."
+                    ],
+                    "confidence": "medium",
+                }
+            )
+        if agent_name == "Codebase Context Synthesis Agent":
+            worker_results = payload.get("worker_results", [])
+            helpers = []
+            for result in worker_results:
+                if isinstance(result, dict):
+                    helpers.extend(result.get("reusable_helpers", []))
+            return json.dumps(
+                {
+                    "observed_practices": [
+                        "Repository practice discovery is based on sampled code chunks, not only static guideline files.",
+                        "Use existing helpers, services, and test styles when a sampled pattern supports them.",
+                    ],
+                    "recommended_practices": [
+                        "Prefer existing shared helpers/services over recreating logic inside feature code.",
+                        "Keep tests focused on changed behavior and aligned with existing test structure.",
+                    ],
+                    "legacy_smells_to_ignore_in_reviews": [],
+                    "objective_bad_practices_not_to_normalize": [
+                        "Hardcoded secrets, broad role bypasses, missing cleanup, and removed regression tests remain findings even if seen in legacy code."
+                    ],
+                    "reusable_helpers": helpers[:8],
+                    "testing_patterns": [
+                        {"pattern": "Add or update tests close to the changed behavior", "confidence": "medium"}
+                    ],
+                    "architecture_patterns": [
+                        {"pattern": "Respect existing feature/service/helper boundaries", "confidence": "medium"}
+                    ],
+                    "review_guidance": [
+                        "When a branch duplicates logic, check whether a sampled helper or service already owns that behavior.",
+                        "Classify repeated but objectively unsafe practices as legacy smells or bad practices, not conventions to follow.",
+                    ],
+                    "confidence": "medium",
+                }
+            )
         if agent_name == "Codebase Context Agent":
+            practice_profile = payload.get("practice_profile", {})
+            review_focus = ["changed behavior", "missing tests", "security-sensitive diffs", "configuration drift"]
+            if isinstance(practice_profile, dict) and practice_profile.get("review_guidance"):
+                review_focus.extend(str(item) for item in practice_profile.get("review_guidance", [])[:3])
             return json.dumps(
                 {
                     "relevant_guidelines": [
@@ -56,7 +123,7 @@ class MockModelClient(ModelClient):
                     ],
                     "known_smells_to_ignore": ["Placeholder or draft knowledge entries are not review findings."],
                     "architecture_context": _architecture_context(payload),
-                    "review_focus": ["changed behavior", "missing tests", "security-sensitive diffs", "configuration drift"],
+                    "review_focus": review_focus,
                 }
             )
         if agent_name == "Branch Review Agent":
@@ -212,10 +279,11 @@ class FoundryAgentClient(ModelClient):
 
     def complete_json(self, agent_name: str, instructions: str, payload: dict[str, Any]) -> str:
         base_url = normalize_openai_base_url(self.endpoint)
-        foundry_agent_name = self.agent_names.get(agent_name)
+        mapped_agent_name = map_foundry_agent_name(agent_name)
+        foundry_agent_name = self.agent_names.get(mapped_agent_name)
         if not foundry_agent_name:
             raise RuntimeError(f"No Foundry agent mapping configured for {agent_name}.")
-        model_name = self.agent_models.get(agent_name)
+        model_name = self.agent_models.get(mapped_agent_name)
         if not model_name:
             raise RuntimeError(f"No Foundry model mapping configured for {agent_name}.")
         user_content = json.dumps(
@@ -275,6 +343,12 @@ def build_model_client(mock: bool) -> ModelClient:
     if first_env("AIRREVIEW_AGENT_MODE").lower() == "foundry_agents":
         return FoundryAgentClient()
     return FoundryModelClient()
+
+
+def map_foundry_agent_name(agent_name: str) -> str:
+    if agent_name in {"Codebase Context Worker Agent", "Codebase Context Synthesis Agent"}:
+        return "Codebase Context Agent"
+    return agent_name
 
 
 def first_env(*names: str, default: str = "") -> str:

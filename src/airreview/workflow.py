@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from dataclasses import dataclass
 from pathlib import Path
 from time import perf_counter
@@ -20,7 +22,7 @@ from .dependencies import scan_dependency_context
 from .git_tools import BranchContext, collect_branch_context, fetch, run_git
 from .github import github_context, load_pr_review_state, post_review_comments as post_github_review_comments
 from .history import compare_findings, default_json_path, diff_hash, load_previous_review, load_review_result, save_review_json
-from .knowledge import KnowledgeBundle, LocalKnowledgeProvider
+from .knowledge import KnowledgeBundle, LocalKnowledgeProvider, discovery_chunk_payload, sample_practice_chunks
 from .models import ModelClient
 from .rendering import build_markdown, output_path_for_branch, write_markdown
 from .tracing import RunTrace, ToolRegistry
@@ -256,6 +258,8 @@ class AirReviewWorkflow:
         self._progress(dependency_summary(dependency_context), detail=True)
 
         planner_agent = JsonAgent("Review Planning Agent", "review_planning_agent.md", self.model_client)
+        context_worker_agent = JsonAgent("Codebase Context Worker Agent", "codebase_context_agent.md", self.model_client)
+        context_synthesis_agent = JsonAgent("Codebase Context Synthesis Agent", "codebase_context_agent.md", self.model_client)
         context_agent = JsonAgent("Codebase Context Agent", "codebase_context_agent.md", self.model_client)
         review_agent = JsonAgent("Branch Review Agent", "branch_review_agent.md", self.model_client)
         critic_agent = JsonAgent("Finding Critic Agent", "finding_critic_agent.md", self.model_client)
@@ -281,6 +285,17 @@ class AirReviewWorkflow:
             "review_profile": self.profile.raw,
             "dependency_context": dependency_context,
         }
+        practice_profile = self._ensure_practice_profile(
+            provider,
+            context_worker_agent,
+            context_synthesis_agent,
+            branch_context,
+            knowledge,
+            dependency_context,
+        )
+        if practice_profile:
+            context_payload["practice_profile"] = practice_profile
+            self._progress("Practice profile loaded for review context")
         plan_json = self._run_agent(
             planner_agent,
             {
@@ -296,6 +311,7 @@ class AirReviewWorkflow:
         budget = plan_json.get("budget", {})
         if isinstance(budget, dict) and budget.get("budget_exceeded"):
             self._progress("Review budget exceeded; remaining files will be skipped or capped by profile")
+        context_payload["mode"] = "select_review_context"
         codebase_context = self._run_agent(context_agent, context_payload)
         focus_count = len(codebase_context.get("review_focus", [])) if isinstance(codebase_context.get("review_focus"), list) else 0
         self._progress(f"Codebase context ready: {focus_count} review focus item(s)", detail=True)
@@ -492,6 +508,134 @@ class AirReviewWorkflow:
             self.trace.record_agent(agent.name, duration_ms, False)
             self._progress(f"{agent.name} failed after {duration_ms:.0f} ms")
             raise
+
+    def _run_agent_plain(self, agent: JsonAgent, payload: dict, display_name: str) -> dict:
+        start = perf_counter()
+        try:
+            self._progress(f"{display_name} started using {model_for_agent(self.model_client, agent.name)}")
+            result = agent.run(payload)
+            duration_ms = (perf_counter() - start) * 1000
+            self.trace.record_agent(display_name, duration_ms, True)
+            self._progress(f"{display_name} completed in {duration_ms:.0f} ms")
+            return result
+        except Exception:
+            duration_ms = (perf_counter() - start) * 1000
+            self.trace.record_agent(display_name, duration_ms, False)
+            self._progress(f"{display_name} failed after {duration_ms:.0f} ms")
+            raise
+
+    def _ensure_practice_profile(
+        self,
+        provider: LocalKnowledgeProvider,
+        worker_agent: JsonAgent,
+        synthesis_agent: JsonAgent,
+        branch_context: BranchContext,
+        knowledge: KnowledgeBundle,
+        dependency_context: dict,
+    ) -> dict:
+        mode = os.getenv("AIRREVIEW_PRACTICE_DISCOVERY", "auto").strip().lower()
+        if mode in {"0", "false", "off", "disabled"}:
+            return provider.load_practice_profile()
+        profile = provider.load_practice_profile()
+        should_discover = mode in {"1", "true", "force", "refresh"} or provider.needs_practice_discovery()
+        if profile and not should_discover:
+            return profile
+        try:
+            return self._discover_practice_profile(
+                provider,
+                worker_agent,
+                synthesis_agent,
+                branch_context,
+                knowledge,
+                dependency_context,
+            )
+        except Exception as exc:
+            self._progress(f"Practice discovery unavailable; continuing with existing knowledge: {exc}")
+            return profile
+
+    def _discover_practice_profile(
+        self,
+        provider: LocalKnowledgeProvider,
+        worker_agent: JsonAgent,
+        synthesis_agent: JsonAgent,
+        branch_context: BranchContext,
+        knowledge: KnowledgeBundle,
+        dependency_context: dict,
+    ) -> dict:
+        self._progress("Discovering codebase practices with parallel context workers")
+        chunks = sample_practice_chunks(
+            self.repo,
+            branch_context.changed_files,
+            max_files=int(os.getenv("AIRREVIEW_PRACTICE_MAX_FILES", "40")),
+            max_files_per_chunk=int(os.getenv("AIRREVIEW_PRACTICE_MAX_FILES_PER_CHUNK", "12")),
+            max_chars_per_file=int(os.getenv("AIRREVIEW_PRACTICE_MAX_CHARS_PER_FILE", "3500")),
+        )
+        max_chunks = int(os.getenv("AIRREVIEW_PRACTICE_MAX_CHUNKS", "2"))
+        if max_chunks > 0:
+            chunks = chunks[:max_chunks]
+        if not chunks:
+            self._progress("Practice discovery skipped: no representative source files found")
+            return provider.load_practice_profile()
+        max_workers = max(1, min(int(os.getenv("AIRREVIEW_PRACTICE_MAX_PARALLEL_WORKERS", "2")), len(chunks)))
+        self._progress(f"Practice discovery plan: {len(chunks)} chunk(s), {max_workers} parallel worker(s)")
+        worker_results: list[dict] = []
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            pending = {}
+            for index, chunk in enumerate(chunks, start=1):
+                display_name = f"Codebase Context Worker Agent - {chunk.name}"
+                files = ", ".join(sample.path for sample in chunk.files[:6])
+                self._progress(f"{display_name} analyzing {len(chunk.files)} file(s): {files}")
+                payload = {
+                    "mode": "discover_practices_chunk",
+                    "branch": branch_context.branch,
+                    "base": branch_context.base,
+                    "chunk": discovery_chunk_payload(chunk),
+                    "knowledge": {
+                        "guidelines": knowledge.guidelines,
+                        "known_smells": knowledge.known_smells,
+                        "generated_scan": knowledge.generated_scan,
+                        "metadata": knowledge.metadata,
+                    },
+                    "dependency_context": dependency_context,
+                    "review_profile": self.profile.raw,
+                    "worker_index": index,
+                    "worker_count": len(chunks),
+                }
+                future = executor.submit(self._run_agent_plain, worker_agent, payload, display_name)
+                pending[future] = chunk.name
+            while pending:
+                done, _ = wait(pending, timeout=12, return_when=FIRST_COMPLETED)
+                if not done:
+                    running = ", ".join(sorted(pending.values()))
+                    self._progress(f"Practice discovery workers still running: {running}")
+                    continue
+                for future in done:
+                    chunk_name = pending.pop(future)
+                    result = future.result()
+                    worker_results.append(result)
+                    observed = result.get("observed_practices", [])
+                    observed_count = len(observed) if isinstance(observed, list) else 0
+                    self._progress(f"Practice worker {chunk_name} returned {observed_count} observed practice(s)")
+        synthesis_payload = {
+            "mode": "synthesize_practice_profile",
+            "branch": branch_context.branch,
+            "base": branch_context.base,
+            "worker_results": worker_results,
+            "chunks": [discovery_chunk_payload(chunk) for chunk in chunks],
+            "knowledge": {
+                "guidelines": knowledge.guidelines,
+                "known_smells": knowledge.known_smells,
+                "generated_scan": knowledge.generated_scan,
+                "metadata": knowledge.metadata,
+            },
+            "dependency_context": dependency_context,
+            "review_profile": self.profile.raw,
+        }
+        profile = self._run_agent(synthesis_agent, synthesis_payload)
+        path = provider.save_practice_profile(profile, chunks, worker_results)
+        self.tools.call("knowledge.practice_profile_save", lambda: str(path))
+        self._progress(f"Practice profile saved: {path}", detail=True)
+        return profile
 
     def _progress(self, message: str, detail: bool = False) -> None:
         if self.quiet or (detail and not self.verbose):
